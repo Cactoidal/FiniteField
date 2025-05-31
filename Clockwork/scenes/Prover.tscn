@@ -1,0 +1,59 @@
+[gd_scene load_steps=2 format=3 uid="uid://cfevpxhpsvbst"]
+
+[ext_resource type="Script" uid="uid://cmrmqtbij7m65" path="res://scripts/Prover.gd" id="1_g0qil"]
+
+[node name="Prover" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_g0qil")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.301961, 0.301961, 0.301961, 1)
+
+[node name="ConnectWallet" type="Button" parent="."]
+layout_mode = 0
+offset_left = 45.0
+offset_top = 15.0
+offset_right = 227.0
+offset_bottom = 69.0
+mouse_default_cursor_shape = 2
+text = "Connect Wallet
+"
+
+[node name="WalletInfo" type="Button" parent="."]
+layout_mode = 0
+offset_left = 45.0
+offset_top = 90.0
+offset_right = 227.0
+offset_bottom = 144.0
+mouse_default_cursor_shape = 2
+text = "Wallet Info"
+
+[node name="GetProof" type="Button" parent="."]
+layout_mode = 0
+offset_left = 45.0
+offset_top = 165.0
+offset_right = 227.0
+offset_bottom = 219.0
+mouse_default_cursor_shape = 2
+text = "Get Proof"
+
+[node name="Log" type="TextEdit" parent="."]
+layout_mode = 0
+offset_left = 373.0
+offset_top = 24.0
+offset_right = 903.0
+offset_bottom = 630.0
+editable = false
+wrap_mode = 1
