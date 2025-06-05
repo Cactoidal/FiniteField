@@ -35,6 +35,7 @@ template Hand() {
     prng._seed <== seedHash;
     var selectedCards[5] = prng.selected;
 
+   
     component cardHasher[handSize];
     var cardHashes[handSize];
 
@@ -43,9 +44,10 @@ template Hand() {
         cardHasher[i] = Poseidon(2);
         cardHasher[i].inputs[0] <== selectedCards[i];
         cardHasher[i].inputs[1] <== nullifiers[i];
-        cardHashes[i] = hasher.out;
+        cardHashes[i] = cardHasher[i].out;
     }
     
+
     // Hash all cardHashes to get the handHash
     component handHasher = Poseidon(5);
     handHasher.inputs[0] <== cardHashes[0];
@@ -53,7 +55,8 @@ template Hand() {
     handHasher.inputs[2] <== cardHashes[2];
     handHasher.inputs[3] <== cardHashes[3];
     handHasher.inputs[4] <== cardHashes[4];
-    handHash <== hasher.out;
+    
+    handHash <== handHasher.out;
 }
 
 component main {public [vrfSeed]} = Hand();
