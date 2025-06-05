@@ -58,6 +58,15 @@ calculateProof: async function(_inputs, _zk_circuit, _zk_proving_key, success, f
   
   },
 
+  bigNumberModulus: function (number, modulus) {
+    var big = BigInt(number)
+
+    var result = big % BigInt(modulus)
+
+    return result.toString()
+
+  },
+
 
 
 }

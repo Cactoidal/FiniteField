@@ -15,13 +15,13 @@ var snarkjs_filepath = "res://js/snarkjs.min.js"
 # Accessed at "window.zkBridge"
 var zk_bridge_filepath = "res://js/zk_bridge.js"
 
-# For local Poseidon Hashing 
+# For local Poseidon hashing 
 # Accessed at "window.IdenJsCrypto"
 var js_crypto_filepath = "res://js/js_crypto.js"
 
 # Required files for proving
-var zk_circuit = "res://zk/addressbind.wasm"
-var zk_proving_key = "res://zk/addressbind_final.zkey"
+var zk_circuit = "res://zk/handDraw.wasm"
+var zk_proving_key = "res://zk/handDraw_final.zkey"
 
 # Accessed at "window.witnessCalculatorBuilder"
 var witness_calculator_filepath = "res://js/witness_calculator.js"
@@ -38,6 +38,8 @@ func _ready():
 	load_and_attach(js_crypto_filepath)
 	load_and_attach(zk_bridge_filepath)
 
+	# Example for predicting hands locally using different fixed seeds 
+	#test_hand()
 
 
 func connect_buttons():
@@ -108,8 +110,32 @@ func has_error(callback):
 
 ### SNARKJS
 
-
 func get_zk_proof():
+	if !connected_wallet:
+		print_log("Please connect your wallet")
+		return
+		
+	# Parameter names must match circuit inputs' names
+	var inputs = {   
+	"vrfSeed": 17,
+	"fixedSeed": 11,
+	"nullifiers": [44334434, 27842362, 27323373, 12312987, 73248927]
+  	}
+	
+	# Must define public_types in callback
+	var public_types  = [
+		["uint256"],
+		["uint256"]
+	]
+	
+	var callback = EthersWeb.create_callback(self, "get_proof_calldata", {"public_types": public_types})
+	
+	
+	calculateProof(inputs, callback)
+
+
+# Deprecated example retained for reference 
+func old_get_zk_proof():
 	if !connected_wallet:
 		print_log("Please connect your wallet")
 		return
@@ -196,8 +222,13 @@ func get_proof_calldata(callback):
 	var calldata = EthersWeb.get_calldata(ABI, "verifyProof", decoded_values)
 	
 	
+	# DEBUG
+	# Will probably split this part into a separate function
 	# ETHEREUM SEPOLIA
-	var verifier_contract = "0xd11680F0cDF6d531f4fEf6ADa888Fbf55246FB7c"
+	
+	var verifier_contract = "0x7bC7120f7c3f6885D6f0ACB0eF71035d13AfE0D8"
+	
+	
 	EthersWeb.send_transaction("Ethereum Sepolia", verifier_contract, calldata)
 	
 	
@@ -250,3 +281,58 @@ func load_script_from_file(path: String) -> String:
 func load_bytes(path: String) -> PackedByteArray:
 	var file = FileAccess.open(path, FileAccess.READ)
 	return file.get_buffer(file.get_length())
+
+
+
+### GAME
+
+var deck = [1, 3, 7, 9, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71]
+var hand_size = 5
+
+func test_hand():
+	
+	# vrf_seed is not controlled by the player (it must match the VRF
+	# seed given on-chain by ChainLink)
+	var vrf_seed = 17
+	
+	# fixed_seed is controllable to alter the possible hand you draw, to
+	# prevent adversaries from predicting the exact content of your hand
+	var fixed_seed = 11
+	
+	# nullifiers are revealed when playing the cards in your hand
+	var nullifiers = [44334434, 27842362, 27323373, 12312987, 73248927]
+	generate_hand(vrf_seed, fixed_seed, nullifiers)
+
+
+# Predict hands using the set of local seeds
+func generate_hand(vrf_seed, fixed_seed, nullifiers):
+	
+	var seed_hash = poseidon([vrf_seed, fixed_seed])
+	
+	var picked_cards = []
+	
+	for draw in range(hand_size):
+		seed_hash = poseidon([seed_hash])
+	
+		var index = int(window.zkBridge.bigNumberModulus(seed_hash, deck.size()))
+	
+		picked_cards.push_back(deck[index])
+	
+	var cards = []
+	var card_hashes = []
+	
+	for card in range(hand_size):
+		var poseidon_hash = poseidon([picked_cards[card], nullifiers[card]])
+		cards.push_back({
+			"card": picked_cards[card],
+			"nullifier": nullifiers[card],
+			"hash": poseidon_hash
+		})
+		card_hashes.push_back(poseidon_hash)
+	
+	var hand_hash = poseidon(card_hashes)
+
+	print("CARDS: ")
+	print(cards)
+	print("HAND HASH: ")
+	print(hand_hash)
