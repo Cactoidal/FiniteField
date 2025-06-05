@@ -46,6 +46,24 @@ calculateProof: async function(_inputs, _zk_circuit, _zk_proving_key, success, f
   
     return typedArray
   
-  }
+  },
 
+  poseidonHash: function (inputs){
+  
+    const poseidon = window.IdenJsCrypto.Poseidon;
+  
+    const hash = poseidon.hash(inputs);
+  
+    return hash.toString();
+  
+  },
+
+
+
+}
+
+function toHexString(uint8Array) {
+  return Array.from(uint8Array)
+    .map(byte => byte.toString(16).padStart(2, '0'))
+    .join('');
 }

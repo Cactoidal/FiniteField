@@ -6,14 +6,25 @@ extends Control
 var connected_wallet
 var listening = false
 
+## ZK 
+
+# Accessed at "window.snarkjs"
 var snarkjs_filepath = "res://js/snarkjs.min.js"
-var witness_calculator_filepath = "res://js/witness_calculator.js"
+
+# Bridge script between Godot and snarkjs
+# Accessed at "window.zkBridge"
 var zk_bridge_filepath = "res://js/zk_bridge.js"
 
+# For local Poseidon Hashing 
+# Accessed at "window.IdenJsCrypto"
+var js_crypto_filepath = "res://js/js_crypto.js"
+
+# Required files for proving
 var zk_circuit = "res://zk/addressbind.wasm"
 var zk_proving_key = "res://zk/addressbind_final.zkey"
-#var zk_circuit = "res://zk/multiplier2.wasm"
-#var zk_proving_key = "res://zk/multiplier2_final.zkey"
+
+# Accessed at "window.witnessCalculatorBuilder"
+var witness_calculator_filepath = "res://js/witness_calculator.js"
 
 
 
@@ -23,9 +34,11 @@ func _ready():
 	
 	# witness_calculator.js is not a library and needs to be attached to the
 	# window using a wrapper (see below)
-	load_and_attach(witness_calculator_filepath, true)
+	load_and_attach(witness_calculator_filepath, "witnessCalculatorBuilder")
+	load_and_attach(js_crypto_filepath)
 	load_and_attach(zk_bridge_filepath)
-	
+
+
 
 func connect_buttons():
 	$ConnectWallet.connect("pressed", connect_wallet)
@@ -40,6 +53,7 @@ func connect_buttons():
 func connect_wallet():
 	var callback = EthersWeb.create_callback(self, "got_account_list")
 	EthersWeb.connect_wallet(callback)
+
 
 func got_account_list(callback):
 	if has_error(callback):
@@ -68,10 +82,10 @@ func show_wallet_info(callback):
 
 func receive_tx_receipt(tx_receipt):
 
-	var hash = tx_receipt["hash"]
+	var tx_hash = tx_receipt["hash"]
 	var status = str(tx_receipt["status"])
 	
-	var txt = "Tx: " + hash + "\nStatus: " + status
+	var txt = "Tx: " + tx_hash + "\nStatus: " + status
 	
 	if status == "1":
 		var blockNumber = str(tx_receipt["blockNumber"])
@@ -89,7 +103,6 @@ func has_error(callback):
 		var txt = "Error " + str(callback["error_code"]) + ": " + callback["error_message"]
 		print_log(txt)
 		return true
-
 
 
 
@@ -205,8 +218,14 @@ func get_decoded_array(values, types):
 		n += 1
 	return new
 	
-	
-	
+
+
+#IdenJsCrypto
+func poseidon(_inputs):
+	var inputs = EthersWeb.arr_to_obj(_inputs)
+	return window.zkBridge.poseidonHash(inputs)
+
+
 ### LOAD SCRIPTS
 
 func load_and_attach(path, exported=false):
@@ -215,7 +234,8 @@ func load_and_attach(path, exported=false):
 	# wrapper for witness_calculator.js
 	if exported: 
 		var wrapper_code = "var module = { exports: {} }; var exports = module.exports;\n"
-		attaching_script = wrapper_code + attaching_script + "\nwindow.witnessCalculatorBuilder = module.exports;"
+		attaching_script = wrapper_code + attaching_script + "\nwindow." + exported + "= module.exports;"
+		#attaching_script = wrapper_code + attaching_script + "\nwindow.witnessCalculatorBuilder = module.exports;"
 
 	JavaScriptBridge.eval(attaching_script, true)
 
