@@ -8,6 +8,9 @@ include "PRNGSelect.circom";
 // Returns the vrfSeed as a public input and the handHash as 
 // a public output.
 
+// Proves that the handHash represents a hand composed of valid cards,
+// generated using ChainLink VRF and a local seed from a fixed set.
+
 template Hand() {
     signal input vrfSeed;
     signal input fixedSeed;
