@@ -84,6 +84,7 @@ func send_transaction(
 	contract,
 	calldata,
 	value="0",
+	gas_limit_override=null,
 	callback="{}"
 	):
 		var chainId = default_network_info[network]["chainId"]
@@ -94,6 +95,7 @@ func send_transaction(
 			contract, 
 			calldata["calldata"],
 			value, 
+			gas_limit_override,
 			success_callback, 
 			error_callback,
 			tx_callback,
@@ -270,12 +272,11 @@ func erc20_balance(
 	token_contract, 
 	callback="{}"
 	):
-	var chainId = default_network_info[network]["chainId"]
 	callback = _add_value_to_callback(callback, "network", network)
 	var data = get_calldata(Contract.ERC20, "balanceOf", [address]) 
 	
 	read_from_contract(
-		chainId,
+		network,
 		token_contract, 
 		data,
 		callback
@@ -301,6 +302,7 @@ func erc20_approve(
 		token_contract, 
 		data,
 		"0",
+		null,
 		callback
 		)
 
@@ -319,6 +321,7 @@ func erc20_transfer(
 		token_contract, 
 		data,
 		"0",
+		null,
 		callback
 		)
 
@@ -898,7 +901,7 @@ func got_ccip_fee(callback):
 	# from appearing in the log :^)
 	callback.erase("output_types")
 
-	send_transaction(network, router, data, fee, str(callback))
+	send_transaction(network, router, data, fee, null, str(callback))
 
 
 

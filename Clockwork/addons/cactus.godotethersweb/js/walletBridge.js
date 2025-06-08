@@ -287,17 +287,28 @@ window.walletBridge = {
 
   },
 
-  callContractFunction: async function(signer, contract_address, calldata, valueEth, success, failure, receiptCallback, callback) {
+  callContractFunction: async function(signer, contract_address, calldata, valueEth, gasLimitOverride, success, failure, receiptCallback, callback) {
 
     try {
-  
       console.log(calldata)
-      const tx = await signer.sendTransaction({
-        to: contract_address,
-        data: calldata,
-        value: valueEth ? window.ethers.parseEther(valueEth) : 0
-      });
-      
+
+
+      if (gasLimitOverride) {
+        const tx = await signer.sendTransaction({
+          to: contract_address,
+          data: calldata,
+          gasLimit: gasLimitOverride,
+          value: valueEth ? window.ethers.parseEther(valueEth) : 0
+        })
+      }
+
+      else {
+        const tx = await signer.sendTransaction({
+          to: contract_address,
+          data: calldata,
+          value: valueEth ? window.ethers.parseEther(valueEth) : 0
+      })
+      }
       console.log(tx)
       success(callback, tx); 
       

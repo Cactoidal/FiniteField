@@ -49,6 +49,24 @@ offset_bottom = 219.0
 mouse_default_cursor_shape = 2
 text = "Get Proof"
 
+[node name="BuyHand" type="Button" parent="."]
+layout_mode = 0
+offset_left = 45.0
+offset_top = 295.0
+offset_right = 227.0
+offset_bottom = 349.0
+mouse_default_cursor_shape = 2
+text = "Buy Hand"
+
+[node name="CalculateHands" type="Button" parent="."]
+layout_mode = 0
+offset_left = 45.0
+offset_top = 367.0
+offset_right = 227.0
+offset_bottom = 421.0
+mouse_default_cursor_shape = 2
+text = "Calculate Hands"
+
 [node name="Log" type="TextEdit" parent="."]
 layout_mode = 0
 offset_left = 373.0

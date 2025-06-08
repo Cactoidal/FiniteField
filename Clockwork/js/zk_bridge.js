@@ -7,7 +7,7 @@ window.zkBridge = {
 // window.witnessCalculatorBuilder, reformatting all the function declarations for a library,
 // and adding the witnessCalculatorBuilder. prefix to any internal function calls
 calculateProof: async function(_inputs, _zk_circuit, _zk_proving_key, success, failure, callback) {
-
+    console.log(_inputs)
     try {
         // The key and circuit are read from the .PCK file as bytes and hex encoded
         // Here the hex strings are turned into Array Buffers
@@ -15,6 +15,7 @@ calculateProof: async function(_inputs, _zk_circuit, _zk_proving_key, success, f
         var zk_circuit = zkBridge.hexConvert(_zk_circuit)
   
         var inputs = JSON.parse(_inputs);
+        console.log(inputs)
   
         // Originally, I modified witness_calculator.js to turn it into a library.  But it's
         // in fact possible to just load it into the window by modifying the generated
@@ -26,6 +27,8 @@ calculateProof: async function(_inputs, _zk_circuit, _zk_proving_key, success, f
       
         const { proof, publicSignals } = await window.snarkjs.groth16.prove(zk_proving_key, witness);
         
+        console.log(publicSignals)
+
         const calldata = await window.snarkjs.groth16.exportSolidityCallData(proof, publicSignals);
         
         success(callback, calldata)
