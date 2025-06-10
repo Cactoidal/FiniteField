@@ -36,8 +36,7 @@ template Hand() {
     // Select cards from the deck.
     component prng = PRNGSelect(handSize, deckSize, [1, 3, 7, 9, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71]);
     prng._seed <== seedHash;
-    var selectedCards[5] = prng.selected;
-
+    var selectedCards[handSize] = prng.selected;
    
     component cardHasher[handSize];
     var cardHashes[handSize];
@@ -51,14 +50,12 @@ template Hand() {
     }
     
 
-    // Hash all cardHashes to get the handHash
-    component handHasher = Poseidon(5);
-    handHasher.inputs[0] <== cardHashes[0];
-    handHasher.inputs[1] <== cardHashes[1];
-    handHasher.inputs[2] <== cardHashes[2];
-    handHasher.inputs[3] <== cardHashes[3];
-    handHasher.inputs[4] <== cardHashes[4];
-    
+    // Hash all cards to get the handHash
+    component handHasher = Poseidon(handSize);
+
+    for (var u = 0; u < handSize; u++) {
+        handHasher.inputs[u] <== cardHashes[u];
+    }
     handHash <== handHasher.out;
 }
 
