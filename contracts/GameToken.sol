@@ -4,7 +4,8 @@ pragma solidity 0.8.20;
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import {IDeposit} from "./IDeposit.sol";
+
+import {IDeposit} from "./interfaces/IDeposit.sol";
 
 contract GameToken is ERC20, ReentrancyGuard {
 
@@ -28,6 +29,7 @@ contract GameToken is ERC20, ReentrancyGuard {
         emit Deposited(depositContract, recipient, mintAmount);
     }
 
+    // potentially could use ratio instead of assuming always 1:1
     function burnAndWithdraw(uint256 amount, address recipient) public nonReentrant {
         if (amount == 0) revert ZeroAmount();
         if (recipient == address(0)) revert ZeroAddress();
