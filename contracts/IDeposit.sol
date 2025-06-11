@@ -4,6 +4,6 @@ pragma solidity 0.8.20;
 
 interface IDeposit {
 
-    function deposit(address depositorContract, address playerAddress, uint256 amount) external;
+    function depositGameToken(address depositorContract, address playerAddress, uint256 amount) external;
 
 }
