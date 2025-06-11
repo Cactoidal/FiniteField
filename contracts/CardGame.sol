@@ -32,6 +32,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     error PlayerLacksHand();
     error AnteDoesNotMatch();
     error PlayerLacksTokens();
+    error InvalidMaximumSpend();
 
     error GameHasNotStarted();
     error OutOfTime();
@@ -105,11 +106,10 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         bool hasRequestedSwap;
     }
 
-    // Player > GameToken > handHash
+    // Player address > GameToken contract > gameStatus
     mapping (address => mapping(address => gameStatus)) public tokenGameStatus;
     mapping (address => mapping(address => bool)) public hasRequestedSeedForToken;
 
- 
     mapping (uint256 => vrfRequest) public pendingVRFRequest;
     uint256 public gameIds = 1;
     mapping (uint256 => game) public gameSession;
@@ -117,10 +117,8 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     uint8 constant TIME_LIMIT = 180;
     uint16 constant END_LIMIT = 900;
   
-
-
     // The Scalar Field size used by Circom.  
-    uint256 FIELD_MODULUS = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
+    uint256 constant FIELD_MODULUS = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
 
     // DEBUG
     uint mostRecentEstimate;
@@ -132,6 +130,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
     function buyHandSeed(address player, address gameToken, uint256 ante) payable public nonReentrant {
         if (player == address(0)) revert ZeroAddress();
+        if (ante == 0) revert ZeroAmount();
         
         // Cannot request new seed for this token until request completes.
         if (hasRequestedSeedForToken[player][gameToken]) revert AlreadyRequestedSeed();
@@ -277,12 +276,15 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
 
     function startGame(address _gameToken, uint256 _ante, uint256 _maximumSpend, address[] calldata players) payable public nonReentrant {
-        uint playerCount = players.length;
-        if (playerCount > 6 || playerCount < 3) revert InvalidPlayerCount();
-
         address gameToken = _gameToken;
         uint256 ante = _ante;
         uint256 maximumSpend = _maximumSpend;
+
+        if (ante == 0) revert ZeroAmount();
+        if (maximumSpend <= ante) revert InvalidMaximumSpend();
+
+        uint playerCount = players.length;
+        if (playerCount > 6 || playerCount < 3) revert InvalidPlayerCount();
 
         uint estimate = IVRFWrapper(vrfWrapperAddress).estimateRequestPriceNative(
             callbackGasLimit, 
@@ -292,13 +294,17 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         if (msg.value < estimate) revert InsufficientFundsForVRF(); 
 
         for (uint i = 0; i < playerCount; i++) {
-            gameStatus memory playerInfo = tokenGameStatus[players[i]][gameToken];
+            address player = players[i];
+            if (player == address(0)) revert ZeroAddress();
+            gameStatus memory playerInfo = tokenGameStatus[player][gameToken];
             if (playerInfo.gameId != 0) revert PlayerAlreadyInGame();
             if (playerInfo.currentHand == 0) revert PlayerLacksHand();
             if (playerInfo.ante != ante) revert AnteDoesNotMatch();
-            if (depositBalance[players[i]][gameToken] < maximumSpend) revert PlayerLacksTokens();
+            if (depositBalance[player][gameToken] < maximumSpend) revert PlayerLacksTokens();
             
-            tokenGameStatus[players[i]][gameToken].gameId = gameIds;
+            // Write to storage:
+            // Put the player into the game.
+            tokenGameStatus[player][gameToken].gameId = gameIds;
         }
 
         game memory newSession;
@@ -307,6 +313,8 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         newSession.ante = ante;
         newSession.maximumSpend = maximumSpend;
 
+        // Write to storage:
+        // Initialize the game.
         gameSession[gameIds] = newSession;
 
          // Call VRF.
@@ -379,6 +387,10 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         return within;
     }
 
+
+    function getObjective(uint256 vrfSeed) public view returns(uint256) {
+
+    }
 
 
     //  TOKEN MANAGEMENT
