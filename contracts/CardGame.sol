@@ -6,11 +6,17 @@ import {ConfirmedOwner} from "@chainlink/contracts@1.4.0/src/v0.8/shared/access/
 import {LinkTokenInterface} from "@chainlink/contracts@1.4.0/src/v0.8/shared/interfaces/LinkTokenInterface.sol";
 import {VRFV2PlusWrapperConsumerBase} from "@chainlink/contracts@1.4.0/src/v0.8/vrf/dev/VRFV2PlusWrapperConsumerBase.sol";
 import {VRFV2PlusClient} from "@chainlink/contracts@1.4.0/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
-import {Groth16VHandVerifier} from "./HandVerify.sol";
+import {IVRFWrapper} from "./IVRFWrapper.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import {IWithdraw} from "./IWithdraw.sol";
+
+import {Groth16VHandVerifier} from "./HandVerify.sol";
+//import {Groth16VSwapVerifier} from "./SwapVerify.sol";
+//import {Groth16VPlayVerifier} from "./PlayVerify.sol";
 
 
-contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, Groth16VHandVerifier {
+contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGuard, Groth16VHandVerifier {
    
     event RequestSent(uint256 requestId, uint32 numWords);
     event RequestFulfilled(
@@ -33,8 +39,10 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, Groth16VHandV
 
     // SEPOLIA
     address public linkAddress = 0x779877A7B0D9E8603169DdbD7836e478b4624789;
-    // SEPOLIA
     address public wrapperAddress = 0x195f15F2d49d693cE265b4fB0fdDbE15b1850Cc1;
+    address public poolAddress;
+    
+    
     
 
     uint public ENTRY_PRICE = 0.001 ether;
@@ -45,9 +53,12 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, Groth16VHandV
 
     mapping (address => uint256) public governancePower;
 
+    // The Scalar Field size used by Circom.  
     uint256 FIELD_MODULUS = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
 
     
+    uint mostRecentEstimate;
+
     constructor() 
         ConfirmedOwner(msg.sender)
         VRFV2PlusWrapperConsumerBase(wrapperAddress)
@@ -57,9 +68,23 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, Groth16VHandV
         //require(!requestedSeed[player]);
         //require(msg.value >= ENTRY_PRICE);
 
+        // msg.value must be sufficient to pay the VRF call + ENTRY_PRICE
+        uint estimate = IVRFWrapper(wrapperAddress).estimateRequestPriceNative(
+            callbackGasLimit, 
+            1, 
+            tx.gasprice);
+        // DEBUG
+        mostRecentEstimate = estimate;
+        require(msg.value >= estimate);  // + ENTRY_PRICE
+        
+        // call VRF
         seedRequest[requestSeed()] = player;
         requestedSeed[player] = true;
-        governancePower[player] += calculateGovernancePower();
+        
+        // transfer remaining ETH to the pool contract
+        (bool success, ) = poolAddress.call{value: address(this).balance}("");
+        require(success, "Transfer failed");
+
     }
 
 
@@ -125,10 +150,6 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, Groth16VHandV
     }
 
 
-    function calculateGovernancePower() internal pure returns(uint256) {
-        return 100;
-    }
-
 
     function getRequestStatus(
         uint256 _requestId
@@ -166,6 +187,40 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, Groth16VHandV
     receive() external payable {
         emit Received(msg.sender, msg.value);
     }
+
+
+    mapping (address => mapping (address => uint256)) depositBalance;
+
+    error NotGameToken();
+    error ZeroAddress();
+    error ZeroAmount();
+    event Deposited(address indexed tokenContract, address indexed recipient, uint256 amount);
+    event Withdrawn(address indexed user, uint256 amount);
+
+    function deposit(address tokenContract, address player, uint256 amount) external nonReentrant {
+        if (!IWithdraw(tokenContract).isGameToken()) revert NotGameToken();
+        if (!(amount > 0)) revert ZeroAmount();
+        if (player == address(0)) revert ZeroAddress();
+
+        IERC20(tokenContract).transferFrom(tokenContract, player, amount);
+        depositBalance[player][tokenContract] += amount;
+
+        emit Deposited(tokenContract, player, amount);
+    }
+
+    function withdraw(address tokenContract) public nonReentrant {
+        if (!IWithdraw(tokenContract).isGameToken()) revert NotGameToken();
+
+        uint256 balance = depositBalance[msg.sender][tokenContract];
+        if (!(balance > 0)) revert ZeroAmount();
+
+        depositBalance[msg.sender][tokenContract] = 0;
+        IWithdraw(tokenContract).burnAndWithdraw(msg.sender, balance);
+
+        emit Withdrawn(msg.sender, balance);
+    }
+
+    
 
 
 }
