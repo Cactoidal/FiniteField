@@ -11,15 +11,28 @@ import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import {IWithdraw} from "./IWithdraw.sol";
 
-import {Groth16VHandVerifier} from "./HandVerify.sol";
+import {Groth16HandVerifier} from "./HandVerify.sol";
 //import {Groth16VSwapVerifier} from "./SwapVerify.sol";
 //import {Groth16VPlayVerifier} from "./PlayVerify.sol";
 
 
-contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGuard, Groth16VHandVerifier {
+contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGuard, Groth16HandVerifier {
    
-    error AlreadyHaveSeed();
+    error InvalidVRFSeed();
+    error InvalidZKP();
     error AlreadyRequestedSeed();
+    error AlreadyHaveHand();
+    error AlreadySwapped();
+    error NotInGame();
+    error NotEnoughTimePassed();
+    error DoesNotMatchHandHash();
+
+    error InvalidPlayerCount();
+    error PlayerAlreadyInGame();
+    error PlayerLacksHand();
+    error AnteDoesNotMatch();
+    error PlayerLacksTokens();
+    
     error TransferFailed();
     error InsufficientTokensForAnte();
     error InsufficientFundsForVRF();
@@ -68,21 +81,26 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         uint256 ante;
         uint256 maximumSpend;
         uint256 gameId;
+        uint256 startTimestamp;
+        uint256 objectiveVRF;
     }
 
-    struct seed {
+    struct gameStatus {
         uint256 vrfSeed;
         uint256 ante;
+        uint256 currentHand;
+        uint256 gameId;
     }
 
     // Player > GameToken > handHash
-    mapping (address => mapping(address => seed)) public seedForToken;
+    mapping (address => mapping(address => gameStatus)) public tokenGameStatus;
     mapping (address => mapping(address => bool)) public hasRequestedSeedForToken;
 
  
     mapping (uint256 => vrfRequest) public pendingVRFRequest;
-    mapping (address => uint256) public currentSeed;
-    mapping (address => uint256) public currentHand;
+    uint256 public gameIds = 1;
+    mapping (uint256 => game) public gameSession;
+  
 
 
     // The Scalar Field size used by Circom.  
@@ -98,13 +116,20 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
     function buyHandSeed(address player, address gameToken, uint256 ante) payable public nonReentrant {
         if (player == address(0)) revert ZeroAddress();
-        if (seedForToken[player][gameToken].vrfSeed != 0) revert AlreadyHaveSeed();
+        
+        // Cannot request new seed for this token until request completes.
         if (hasRequestedSeedForToken[player][gameToken]) revert AlreadyRequestedSeed();
+
+        // Cannot request new seed if it has been used to create a hand.
+        if (tokenGameStatus[player][gameToken].currentHand != 0) revert AlreadyHaveHand();
+
+        // The ante is an upfront cost for a seed; the seed is only eligible for use in 
+        // games with the same ante.
         if (depositBalance[player][gameToken] > ante) revert InsufficientTokensForAnte();
         
         hasRequestedSeedForToken[player][gameToken] = true;
         depositBalance[player][gameToken] -= ante;
-        seedForToken[player][gameToken].ante = ante; 
+        tokenGameStatus[player][gameToken].ante = ante; 
 
         uint estimate = IVRFWrapper(wrapperAddress).estimateRequestPriceNative(
             callbackGasLimit, 
@@ -172,7 +197,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         if (requestType == vrfRequestType.NEW_HAND) {
             address player = pendingVRFRequest[_requestId].requester;
             address gameToken = pendingVRFRequest[_requestId].gameToken;
-            seedForToken[player][gameToken].vrfSeed = vrfSeed;
+            tokenGameStatus[player][gameToken].vrfSeed = vrfSeed;
             hasRequestedSeedForToken[player][gameToken] = false;
         }
 
@@ -196,19 +221,86 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
 
 
-    function proveHand(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[2] calldata _pubSignals) public {
-        require (currentSeed[msg.sender] != 0);
+    function proveHand(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[3] calldata _pubSignals) public {
+        address gameToken = address(uint160(_pubSignals[2]));
+        gameStatus memory playerInfo = tokenGameStatus[msg.sender][gameToken];
 
-        require (this.verifyProof(_pA, _pB, _pC, _pubSignals));
+        if (playerInfo.vrfSeed == 0) revert InvalidVRFSeed();
+        if (playerInfo.currentHand == 0) revert AlreadyHaveHand();
+        if (!this.verifyProof(_pA, _pB, _pC, _pubSignals)) revert InvalidZKP();
         
         // Seed used in ZKP must match on-chain VRF seed
         // Apply the BN128 Field Modulus first, otherwise bigger values will not validate correctly
-        require (_pubSignals[1] == currentSeed[msg.sender] % FIELD_MODULUS);
+        if (_pubSignals[1] != playerInfo.vrfSeed % FIELD_MODULUS) revert InvalidVRFSeed();
         
-        // Hand hash cached to be used in card-playing proof
-        currentHand[msg.sender] = _pubSignals[0];
+        // Hand hash cached for use in game
+        tokenGameStatus[msg.sender][gameToken].currentHand = _pubSignals[0];
     }
 
+
+    function startGame(address gameToken, uint256 ante, uint256 maximumSpend, address[] calldata players) public {
+        uint playerCount = players.length;
+        if (playerCount > 6 || playerCount < 3) revert InvalidPlayerCount();
+
+        for (uint i = 0; i < playerCount; i++) {
+            gameStatus memory playerInfo = tokenGameStatus[players[i]][gameToken];
+            if (playerInfo.gameId != 0) revert PlayerAlreadyInGame();
+            if (playerInfo.currentHand == 0) revert PlayerLacksHand();
+            if (playerInfo.ante != ante) revert AnteDoesNotMatch();
+            if (depositBalance[players[i]][gameToken] < maximumSpend) revert PlayerLacksTokens();
+            
+            tokenGameStatus[players[i]][gameToken].gameId = gameIds;
+
+        }
+
+        gameIds++;
+
+
+    }
+
+
+
+    //  TOKEN MANAGEMENT
+
+    mapping (address => mapping (address => uint256)) depositBalance;
+
+    error NotGameToken();
+    error ZeroAddress();
+    error ZeroAmount();
+    event Deposited(address indexed tokenContract, address indexed recipient, uint256 amount);
+    event Withdrawn(address indexed user, uint256 amount);
+
+    function depositGameToken(address tokenContract, address player, uint256 amount) external nonReentrant {
+        if (!IWithdraw(tokenContract).isGameToken()) revert NotGameToken();
+        if (amount == 0) revert ZeroAmount();
+        if (player == address(0)) revert ZeroAddress();
+
+        IERC20(tokenContract).transferFrom(tokenContract, player, amount);
+        depositBalance[player][tokenContract] += amount;
+
+        emit Deposited(tokenContract, player, amount);
+    }
+
+    function withdrawGameToken(address tokenContract) public nonReentrant {
+        if (!IWithdraw(tokenContract).isGameToken()) revert NotGameToken();
+
+        uint256 balance = depositBalance[msg.sender][tokenContract];
+        if (balance == 0) revert ZeroAmount();
+
+        depositBalance[msg.sender][tokenContract] = 0;
+        IWithdraw(tokenContract).burnAndWithdraw(msg.sender, balance);
+
+        emit Withdrawn(msg.sender, balance);
+    }
+
+
+
+
+
+
+
+
+    // MAINTENANCE
 
 
     function getRequestStatus(
@@ -246,38 +338,6 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     event Received(address, uint256);
     receive() external payable {
         emit Received(msg.sender, msg.value);
-    }
-
-
-    mapping (address => mapping (address => uint256)) depositBalance;
-
-    error NotGameToken();
-    error ZeroAddress();
-    error ZeroAmount();
-    event Deposited(address indexed tokenContract, address indexed recipient, uint256 amount);
-    event Withdrawn(address indexed user, uint256 amount);
-
-    function depositGameToken(address tokenContract, address player, uint256 amount) external nonReentrant {
-        if (!IWithdraw(tokenContract).isGameToken()) revert NotGameToken();
-        if (amount == 0) revert ZeroAmount();
-        if (player == address(0)) revert ZeroAddress();
-
-        IERC20(tokenContract).transferFrom(tokenContract, player, amount);
-        depositBalance[player][tokenContract] += amount;
-
-        emit Deposited(tokenContract, player, amount);
-    }
-
-    function withdrawGameToken(address tokenContract) public nonReentrant {
-        if (!IWithdraw(tokenContract).isGameToken()) revert NotGameToken();
-
-        uint256 balance = depositBalance[msg.sender][tokenContract];
-        if (balance == 0) revert ZeroAmount();
-
-        depositBalance[msg.sender][tokenContract] = 0;
-        IWithdraw(tokenContract).burnAndWithdraw(msg.sender, balance);
-
-        emit Withdrawn(msg.sender, balance);
     }
 
     
