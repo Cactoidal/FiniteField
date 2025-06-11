@@ -37,10 +37,10 @@ contract Groth16HandVerifier {
     uint256 constant gammax2 = 10857046999023057135944570762232829481370756359578518086990519993285655852781;
     uint256 constant gammay1 = 4082367875863433681332203403145435568316851327593401208105741076214120093531;
     uint256 constant gammay2 = 8495653923123431417604973247489272438418190587263600148770280649306958101930;
-    uint256 constant deltax1 = 2640469432773009727744326779961258586206326799708144191729363366944808583667;
-    uint256 constant deltax2 = 810597071311145140019727915915058668458921158171582128483145146362233183940;
-    uint256 constant deltay1 = 8923254875537470688941351069509743419131101811404959048621996716141020246353;
-    uint256 constant deltay2 = 10632395813731659819982093165418972838987031202484259047071953010341224015049;
+    uint256 constant deltax1 = 854589032717764161710625324377097787953741977294499306230135644652237771567;
+    uint256 constant deltax2 = 14595364927855237388460823342207510175536019288991299049969860191606379415143;
+    uint256 constant deltay1 = 17717956519817983649032992659386715616623751240911373053453255468283774047490;
+    uint256 constant deltay2 = 12743424113355360622199038245952224678061563016801612474305426268016115481208;
 
     
     uint256 constant IC0x = 18674597486322989319166878162389080220017561117966110856310754503552320512567;
@@ -52,6 +52,9 @@ contract Groth16HandVerifier {
     uint256 constant IC2x = 12468868112211642822274731097265601826051951652437666170086823858703613917;
     uint256 constant IC2y = 11844439398059577777197378145256174908947669057953197668767845404403524791465;
     
+    uint256 constant IC3x = 7189917355223104756368993280530889042778989582942368223164827620382902419205;
+    uint256 constant IC3y = 10835075881347427029128511212359057604152329580286759847695577916409074650778;
+    
  
     // Memory data
     uint16 constant pVk = 0;
@@ -59,7 +62,7 @@ contract Groth16HandVerifier {
 
     uint16 constant pLastMem = 896;
 
-    function verifyProof(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[2] calldata _pubSignals) public view returns (bool) {
+    function verifyHandProof(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[3] calldata _pubSignals) public view returns (bool) {
         assembly {
             function checkField(v) {
                 if iszero(lt(v, r)) {
@@ -106,6 +109,8 @@ contract Groth16HandVerifier {
                 g1_mulAccC(_pVk, IC1x, IC1y, calldataload(add(pubSignals, 0)))
                 
                 g1_mulAccC(_pVk, IC2x, IC2y, calldataload(add(pubSignals, 32)))
+                
+                g1_mulAccC(_pVk, IC3x, IC3y, calldataload(add(pubSignals, 64)))
                 
 
                 // -A
@@ -163,6 +168,8 @@ contract Groth16HandVerifier {
             checkField(calldataload(add(_pubSignals, 0)))
             
             checkField(calldataload(add(_pubSignals, 32)))
+            
+            checkField(calldataload(add(_pubSignals, 64)))
             
 
             // Validate all evaluations
