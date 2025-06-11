@@ -17,23 +17,21 @@ include "utils/comparators.circom";
 // Like the drawHand circuit, contains hardcoded deck and local seed arrays.
 
 template Swap() {
-    signal input vrfSeed;
-    signal input fixedSeed;
-
-    // Must match the handSize
-    signal input oldCards[5];
-
-    // Must match the drawSize
-    signal input indices[2];
-    signal input nullifiers[2];
-
-    signal output oldHandHash;
-    signal output newHandHash;
-
-    var localSeedCount = 20;
     var handSize = 5;
     var drawSize = 2;
     var deckSize = 20;
+    var localSeedCount = 20;
+
+    signal input vrfSeed;
+    signal input fixedSeed;
+
+    signal input oldCards[handSize];
+
+    signal input indices[drawSize];
+    signal input nullifiers[drawSize];
+
+    signal output oldHandHash;
+    signal output newHandHash;
 
     // Hash all cards to get the oldHandHash
     component oldHandHasher = Poseidon(handSize);
@@ -58,7 +56,6 @@ template Swap() {
     component prng = PRNGSelect(drawSize, deckSize, [1, 3, 7, 9, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71]);
     prng._seed <== seedHash;
     var selectedCards[drawSize] = prng.selected;
-
 
     component cardHasher[drawSize];
     var cardHashes[drawSize];

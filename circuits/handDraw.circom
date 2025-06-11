@@ -12,15 +12,15 @@ include "PRNGSelect.circom";
 // generated using ChainLink VRF and a local seed from a fixed set.
 
 template Hand() {
-    signal input vrfSeed;
-    signal input fixedSeed;
-    signal input nullifiers[5];
-
-    signal output handHash;
-
-    var localSeedCount = 20;
     var handSize = 5;
     var deckSize = 20;
+    var localSeedCount = 20;
+
+    signal input vrfSeed;
+    signal input fixedSeed;
+    signal input nullifiers[handSize];
+
+    signal output handHash;
 
     // fixedSeed must be in the set of allowed local seeds.
     component inSetCheck = InSet(localSeedCount, [1, 3, 7, 9, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71]);
@@ -49,7 +49,6 @@ template Hand() {
         cardHashes[i] = cardHasher[i].out;
     }
     
-
     // Hash all cards to get the handHash
     component handHasher = Poseidon(handSize);
 
