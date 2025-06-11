@@ -36,17 +36,20 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     error OutOfTime();
     error TooEarly();
     error GameIDNotFound();
+    error InvalidRaise();
     
     error TransferFailed();
     error InsufficientTokensForAnte();
     error InsufficientFundsForVRF();
+    error CannotWithdrawDuringGame();
 
     event ProvedHand(address player, uint256 handHash, uint256 playerVRFSeed);
     event StartingNewGame(uint256 gameId);
     event GameStarted(uint256 gameId, uint256 objectiveVRFSeed);
-    event SwappedCards(address player, uint256 gameId, uint256 playerVRFSeed);
+    event SwappingCards(address player, uint256 gameId);
+    event ProvedSwap(address player, uint256 gameId, uint256 playerVRFSeed);
     event Raised(address player, uint256 gameId, uint256 amount);
-    event Folded(address player, uint256 gameId, uint256 amount);
+    event Folded(address player, uint256 gameId);
     event PlayedCards(address player, uint256 gameId, uint8[] cards);
     event GameConcluded(address[] winners, uint256 gameId, uint256 prize);
 
@@ -91,6 +94,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         address gameToken;
         uint256 ante;
         uint256 maximumSpend;
+        uint256 highBet;
         uint256 startTimestamp;
         uint256 objectiveVRF;
     }
@@ -100,6 +104,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         uint256 ante;
         uint256 currentHand;
         uint256 gameId;
+        uint256 bidAmount;
         uint256 vrfSwapSeed;
         bool hasRequestedSwap;
     }
@@ -132,7 +137,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         if (player == address(0)) revert ZeroAddress();
         if (ante == 0) revert ZeroAmount();
         
-        // Cannot request new seed for this token until request completes.
+        // Cannot request new seed for this token while a request is already pending.
         if (hasRequestedSeedForToken[player][gameToken]) revert AlreadyRequestedSeed();
 
         // Cannot request new seed if it has been used to create a hand.
@@ -337,25 +342,64 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     }
 
     // Only callable during the first 3 minutes of a game
-    function raise(address gameToken) public {
-        if (!withinTimeLimit(msg.sender, gameToken, TIME_LIMIT)) revert OutOfTime();
+    function raise(address gameToken, uint amount) public nonReentrant {
+        playerStatus memory playerInfo = tokenPlayerStatus[msg.sender][gameToken];
+        uint gameId = playerInfo.gameId;
+        if (gameId == 0) revert GameIDNotFound();
+        if (!withinTimeLimit(gameId, TIME_LIMIT)) revert OutOfTime();
 
-        // emit Raised()
+        uint256 maximumSpend = gameSession[gameId].maximumSpend;
+        uint256 bidAmount = playerInfo.bidAmount;        
+        
+        if (amount + bidAmount > maximumSpend) revert InvalidRaise();
+
+        tokenPlayerStatus[msg.sender][gameToken].bidAmount += amount;
+    
+        emit Raised(msg.sender, gameId, amount);
     }
 
-    function fold(address gameToken) public {
-        if (!withinTimeLimit(msg.sender, gameToken, TIME_LIMIT)) revert OutOfTime();
 
-        //emit Folded()
+    function fold(address gameToken) public {
+        playerStatus memory playerInfo = tokenPlayerStatus[msg.sender][gameToken];
+        uint gameId = playerInfo.gameId;
+        if (gameId == 0) revert GameIDNotFound();
+        if (!withinTimeLimit(gameId, TIME_LIMIT)) revert OutOfTime();
+
+        // fold
+
+        emit Folded(msg.sender, gameId);
+    }
+
+    // NOTE 
+    // It could make sense to require a commitment here: a hash of the 
+    // two discarded cards, which will be used as an input to the ZKP
+    // and then validated on-chain as a public signal
+    function swapCards(address gameToken) public {
+        playerStatus memory playerInfo = tokenPlayerStatus[msg.sender][gameToken];
+        uint gameId = playerInfo.gameId;
+        if (gameId == 0) revert GameIDNotFound();
+        if (!withinTimeLimit(gameId, TIME_LIMIT)) revert OutOfTime();
+
+        // vrf
+
+        emit SwappingCards(msg.sender, gameId);
+
     }
 
     // DEBUG
     // Double check _pubSignals size
-    function swapCards(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[3] calldata _pubSignals) public {
+    function proveSwapCards(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[3] calldata _pubSignals) public {
         address gameToken = address(uint160(_pubSignals[2]));
-        if (!withinTimeLimit(msg.sender, gameToken, TIME_LIMIT)) revert OutOfTime();
+        playerStatus memory playerInfo = tokenPlayerStatus[msg.sender][gameToken];
+        uint gameId = playerInfo.gameId;
+        if (gameId == 0) revert GameIDNotFound();
+        if (!withinTimeLimit(gameId, TIME_LIMIT)) revert OutOfTime();
 
-        //emit SwappedCards()
+        uint256 vrfSwapSeed = playerInfo.vrfSwapSeed;
+
+        // Validate vrf seed
+
+        emit ProvedSwap(msg.sender, gameId, vrfSwapSeed);
     }
     
 
@@ -365,24 +409,39 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     // Double check _pubSignals size
     function playCards(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[3] calldata _pubSignals) public {
         address gameToken = address(uint160(_pubSignals[2]));
-        if (withinTimeLimit(msg.sender, gameToken, TIME_LIMIT)) revert TooEarly();
-        if (!withinTimeLimit(msg.sender, gameToken, END_LIMIT)) revert OutOfTime();
+        playerStatus memory playerInfo = tokenPlayerStatus[msg.sender][gameToken];
+        uint gameId = playerInfo.gameId;
+        if (gameId == 0) revert GameIDNotFound();
+        if (withinTimeLimit(gameId, TIME_LIMIT)) revert TooEarly();
+        if (!withinTimeLimit(gameId, END_LIMIT)) revert OutOfTime();
 
-        //emit PlayedCards()
+        // Validate against hand hash
+
+        //emit PlayedCards(address player, uint256 gameId, uint8[] cards);
     }
 
     // Only callable after 15 minutes have elapsed
     function concludeGame(address gameToken) public {
-        if (withinTimeLimit(msg.sender, gameToken, END_LIMIT)) revert TooEarly();
+        playerStatus memory playerInfo = tokenPlayerStatus[msg.sender][gameToken];
+        uint gameId = playerInfo.gameId;
+        if (gameId == 0) revert GameIDNotFound();
+        if (withinTimeLimit(gameId, END_LIMIT)) revert TooEarly();
+
+        // cycle through addresses to check which have submitted proofs
+        // score them
+        // determine winners
+        // add up antes and bets
+        // distribute to winners
+        // clear player status for any players who have not folded/proved
         
-        //emit GameConcluded()
+
+        //emit GameConcluded(winners, gameId, prize);
     }
 
 
-    function withinTimeLimit(address player, address gameToken, uint limit) public view returns(bool) {
+    function withinTimeLimit(uint gameId, uint limit) public view returns(bool) {
         bool within = false;
 
-        uint gameId = tokenPlayerStatus[player][gameToken].gameId;
         if (gameId == 0) revert GameHasNotStarted();
 
         uint startTimestamp = gameSession[gameId].startTimestamp;
@@ -422,6 +481,9 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
             uint8 cardColor = 1;
             if (card > 10) {
                 cardColor = 2;
+
+                // Shim for 11-20
+                card -= 10;
             }
 
             uint256 diff = 0;
@@ -506,6 +568,8 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
     function withdrawGameToken(address tokenContract) public nonReentrant {
         if (!IWithdraw(tokenContract).isGameToken()) revert NotGameToken();
+
+        if (tokenPlayerStatus[msg.sender][tokenContract].gameId != 0) revert CannotWithdrawDuringGame();
 
         uint256 balance = depositBalance[msg.sender][tokenContract];
         if (balance == 0) revert ZeroAmount();
