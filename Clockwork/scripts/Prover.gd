@@ -19,32 +19,29 @@ var zk_bridge_filepath = "res://js/zk_bridge.js"
 # Accessed at "window.IdenJsCrypto"
 var js_crypto_filepath = "res://js/js_crypto.js"
 
-# Required files for proving
-var zk_circuit = "res://zk/handDraw.wasm"
-var zk_proving_key = "res://zk/handDraw_final.zkey"
+# The Scalar Field size used by Circom.
+var FIELD_MODULUS = "21888242871839275222246405745257275088548364400416034343698204186575808495617"
 
-# Accessed at "window.witnessCalculatorBuilder"
-var witness_calculator_filepath = "res://js/witness_calculator.js"
+# To create proofs, 3 files are required:
+var handDraw_zk_circuit = "res://zk/handDraw.wasm"
+var handDraw_zk_proving_key = "res://zk/handDraw_final.zkey"
+# Accessed at window.handDrawWitnessCalculator
+var hand_witness_calculator_filepath = "res://js/handDraw_witness_calculator.js"
 
 
-var SEPOLIA_GAME_CONTRACT_ADDRESS = "0xB7A5A226f19CDD52958572B75Ec427995B215466"
-var vrf_seed
-var hand_hash
-
-var local_seeds = [1, 3, 7, 9, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71]
 
 func _ready():
 	connect_buttons()
 	load_and_attach(snarkjs_filepath)
 	
-	# witness_calculator.js is not a library and needs to be attached to the
-	# window using a wrapper (see below)
-	load_and_attach(witness_calculator_filepath, "witnessCalculatorBuilder")
+	# witness_calculator.js files need to be attached to the
+	# window using a wrapper (see below) and later passed as an object
+	load_and_attach(hand_witness_calculator_filepath, "handDrawWitnessCalculator")
 	load_and_attach(js_crypto_filepath)
 	load_and_attach(zk_bridge_filepath)
+	for seed in range(100):
+		get_random_local_seed()
 	
-	# Example for predicting hands locally using different fixed seeds 
-	#test_hand()
 
 
 func connect_buttons():
@@ -53,7 +50,7 @@ func connect_buttons():
 
 	$GetProof.connect("pressed", get_hand_zk_proof)
 	
-	$BuyHand.connect("pressed", buy_hand)
+	$BuySeed.connect("pressed", buy_seed)
 	$CalculateHands.connect("pressed", get_vrf_seed)
 
 	EthersWeb.register_transaction_log(self, "receive_tx_receipt")
@@ -118,83 +115,12 @@ func has_error(callback):
 
 ### SNARKJS
 
-
-func get_vrf_seed():
-	
-	var callback = EthersWeb.create_callback(self, "got_vrf_seed")
-
-	var data = EthersWeb.get_calldata(GAME_CONTRACT, "currentSeed", [connected_wallet]) 
-	
-	EthersWeb.read_from_contract(
-		"Ethereum Sepolia",
-		SEPOLIA_GAME_CONTRACT_ADDRESS, 
-		data,
-		callback
-		)
-
-func got_vrf_seed(callback):
-	if has_error(callback):
-		return
-	
-	vrf_seed = callback["result"][0]
-	print_log("VRF Seed: " + vrf_seed)
-	calculate_hands()
-
-
-func calculate_hands():
-	var nullifiers = [poseidon([44334434]), poseidon([27842362]), poseidon([27323373]), poseidon([12312987]), poseidon([73248927])]
-	for local_seed in local_seeds:
-		generate_hand(vrf_seed, local_seed, nullifiers)
-
-
-
-# DEBUG
-# Test for drawing a hand
-
-# vrfSeed will need to come off the chain, fixedSeed will need to come
-# from a set of local seeds, and nullifiers need to be randomly generated.
-# Simulated hands will have been generated using all the local seeds, and the
-# hand containing the most preferred cards will have been selected.
-func get_hand_zk_proof():
-	if !connected_wallet:
-		print_log("Please connect your wallet")
-		return
-	
-	if !vrf_seed:
-		print_log("Please get the current seed")
-		return
-		
-	# Parameter names must match circuit inputs' names
-	var inputs = {   
-	# Must come from the smart contract (will be validated on-chain 
-	# using the public input)
-	"vrfSeed": vrf_seed,
-	
-	# Selected from the set of local seeds, chosen because it generates
-	# the hand containing the most preferred cards
-	"fixedSeed": 11,
-	
-	# Large, randomized nullifiers will work
-	"nullifiers": [poseidon([44334434]), poseidon([27842362]), poseidon([27323373]), poseidon([12312987]), poseidon([73248927])]
-  	}
-	
-	# Must define public_types for the callback
-	var public_types  = [
-		["uint256"],
-		["uint256"]
-	]
-	
-	#var callback = EthersWeb.create_callback(self, "get_proof_calldata", {"public_types": public_types})
-	
-	calculateProof(inputs, public_types, "proveHand")
-
-
 # Generlalized function for taking any inputs, circuit, and zkey,
 # generating the proof, and sorting the calldata in the callback.
 # The types of the public outputs must be defined.
 # Optionally, the contract function can be specified, if it is called
 # something other than verifyProof.
-func calculateProof(_inputs, public_types, function_name="verifyProof"):
+func calculateProof(_inputs, public_types, zk_circuit, zk_proving_key, witness_calculator, function_name="verifyProof"):
 	
 	var callback = EthersWeb.create_callback(self, "get_proof_calldata", {"public_types": public_types, "function_name": function_name})
 	
@@ -205,7 +131,8 @@ func calculateProof(_inputs, public_types, function_name="verifyProof"):
 	window.zkBridge.calculateProof(
 		inputs, 
 		circuit_bytes.hex_encode(), 
-		key_bytes.hex_encode(), 
+		key_bytes.hex_encode(),
+		witness_calculator, 
 		EthersWeb.success_callback, 
 		EthersWeb.error_callback, 
 		callback)
@@ -264,17 +191,11 @@ func get_proof_calldata(callback):
 
 	# Ready to send to contract
 	var calldata = EthersWeb.get_calldata(ABI, function_name, decoded_values)
-	#var calldata = EthersWeb.get_calldata(ABI, "verifyProof", decoded_values)
+
 	
 	# DEBUG
 	# Will probably split this part into a separate function
-	# ETHEREUM SEPOLIA
-	
-	#var verifier_contract = "0x7bC7120f7c3f6885D6f0ACB0eF71035d13AfE0D8"
-	#var verifier_contract = "0x932066b35E4922dAE2Bf3b717628745bd2ea5543"
-	
 	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_CONTRACT_ADDRESS, calldata)
-	
 	
 	print_log("PROOF VALUES:\n" + str(decoded_values) + "\n\n")
 	
@@ -295,7 +216,7 @@ func get_decoded_array(values, types):
 	
 
 
-#IdenJsCrypto
+##  IdenJsCrypto
 func poseidon(_inputs):
 	if typeof(_inputs) != 28:
 		push_error("Poseidon inputs must be inside an array!")
@@ -332,34 +253,118 @@ func load_bytes(path: String) -> PackedByteArray:
 
 ### GAME
 
-var deck = [1, 3, 7, 9, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71]
+
+var SEPOLIA_GAME_CONTRACT_ADDRESS = "0xB7A5A226f19CDD52958572B75Ec427995B215466"
+var vrf_seed
+var hand_hash
+
+var local_seeds = [1, 3, 7, 9, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71]
+var deck = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
 var hand_size = 5
 
-func test_hand():
+
+
+func buy_seed():
+	if !connected_wallet:
+		print_log("Please connect your wallet")
+		return
+		
+	var calldata = EthersWeb.get_calldata(GAME_CONTRACT, "buyHandSeed", [connected_wallet])
 	
-	# vrf_seed is not controlled by the player (it must match the VRF
-	# seed given on-chain by ChainLink)
-	var vrf_seed = "89839320076660362182307967905715657782572128825723119922534927862398646168506"
+	# Gas limit must be specified because ethers.js will underestimate
+	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_CONTRACT_ADDRESS, calldata, "0.001", "220000")
+
+
+
+func get_vrf_seed():
 	
-	# fixed_seed is controllable to alter the possible hand you draw, to
-	# prevent adversaries from predicting the exact content of your hand
-	var fixed_seed = 11
+	var callback = EthersWeb.create_callback(self, "got_vrf_seed")
+
+	var data = EthersWeb.get_calldata(GAME_CONTRACT, "currentSeed", [connected_wallet]) 
 	
-	# nullifiers are generated randomly and will be revealed when playing 
-	# the cards in your hand
-	var nullifiers = [44334434, 27842362, 27323373, 12312987, 73248927]
-	generate_hand(vrf_seed, fixed_seed, nullifiers)
+	EthersWeb.read_from_contract(
+		"Ethereum Sepolia",
+		SEPOLIA_GAME_CONTRACT_ADDRESS, 
+		data,
+		callback
+		)
+
+func got_vrf_seed(callback):
+	if has_error(callback):
+		return
+	
+	vrf_seed = callback["result"][0]
+	print_log("VRF Seed: " + vrf_seed)
+	calculate_hands()
+
+
+func calculate_hands():
+	var nullifiers = generate_nullifier_set(hand_size)
+	for local_seed in local_seeds:
+		generate_hand(vrf_seed, local_seed, nullifiers)
+
+
+
+# vrfSeed will need to come off the chain, fixedSeed will need to come
+# from a set of local seeds, and nullifiers need to be randomly generated.
+# Simulated hands will have been generated using all the local seeds, and the
+# hand containing the most preferred cards will have been selected.
+func get_hand_zk_proof():
+	if !connected_wallet:
+		print_log("Please connect your wallet")
+		return
+	
+	if !vrf_seed:
+		print_log("Please get the current seed")
+		return
+		
+	# Parameter names must match circuit inputs' names
+	var inputs = {   
+	# Must come from the smart contract (will be validated on-chain 
+	# using the public input)
+	"vrfSeed": vrf_seed,
+	
+	# Selected from the set of local seeds, chosen because it generates
+	# the hand containing the most preferred cards
+	"fixedSeed": get_random_local_seed(),
+	#"fixedSeed": 11,
+	
+	# Large, randomized nullifiers will work
+	"nullifiers": generate_nullifier_set(hand_size)
+	#"nullifiers": [poseidon([44334434]), poseidon([27842362]), poseidon([27323373]), poseidon([12312987]), poseidon([73248927])]
+  	}
+	
+	# Must define public_types for the callback
+	var public_types  = [
+		["uint256"],
+		["uint256"]
+	]
+	
+	#var callback = EthersWeb.create_callback(self, "get_proof_calldata", {"public_types": public_types})
+	
+	calculateProof(
+		inputs, 
+		public_types, 
+		handDraw_zk_circuit, 
+		handDraw_zk_proving_key, 
+		window.handDrawWitnessCalculator,
+		"proveHand")
+
+
 
 
 # Predict hands using the set of local seeds
-func generate_hand(vrf_seed, fixed_seed, nullifiers):
+func generate_hand(_vrf_seed, fixed_seed, nullifiers):
+	
+	# Apply the field modulus before hashing, otherwise large values 
+	# won't validate properly
+	var vrf_seed = window.zkBridge.bigNumberModulus(_vrf_seed, FIELD_MODULUS)
 	
 	var seed_hash = poseidon([vrf_seed, fixed_seed])
-	print(seed_hash)
 	
 	var picked_cards = []
 	
-	for drawing in range(hand_size):
+	for card_draw in range(hand_size):
 		seed_hash = poseidon([seed_hash])
 	
 		var index = int(window.zkBridge.bigNumberModulus(seed_hash, deck.size()))
@@ -388,20 +393,45 @@ func generate_hand(vrf_seed, fixed_seed, nullifiers):
 
 
 
+func generate_nullifier_set(count):
+	var nullifiers = []
+	for nullifier in range(count):
+		# Add "0x" so it can be converted into a BigInt 
+		var bytes = "0x" + Crypto.new().generate_random_bytes(32).hex_encode()
+		# Must apply the field modulus before hashing 
+		var mod = window.zkBridge.bigNumberModulus(bytes, FIELD_MODULUS)
+		var hash = poseidon([mod])
+		nullifiers.push_back(hash)
+	return nullifiers
 
 
-func buy_hand():
-	if !connected_wallet:
-		print_log("Please connect your wallet")
-		return
-		
-	var calldata = EthersWeb.get_calldata(GAME_CONTRACT, "buyHandSeed", [connected_wallet])
+func get_random_local_seed():
+	var bytes = "0x" + Crypto.new().generate_random_bytes(32).hex_encode()
+	var index = window.zkBridge.bigNumberModulus(bytes, 20)
+	var local_seed = local_seeds[int(index)]
+	return local_seed
+
+
+
+# DEBUG
+# Test function
+func test_hand():
 	
-	#var verifier_contract = "0x77459F9aDA5E41C80D235e3394CAE04A786B5446"
+	# vrf_seed is not controlled by the player (it must match the VRF
+	# seed given on-chain by ChainLink)
+	var vrf_seed = "89839320076660362182307967905715657782572128825723119922534927862398646168506"
 	
-	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_CONTRACT_ADDRESS, calldata, "0.001", "220000")
-	#EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_CONTRACT_ADDRESS, calldata, "0.001")
-	#EthersWeb.send_transaction("Ethereum Sepolia", verifier_contract, calldata, "0.001")
+	# fixed_seed is controllable to alter the possible hand you draw, to
+	# prevent adversaries from predicting the exact content of your hand
+	var fixed_seed = 11
+	
+	# nullifiers are generated randomly and will be revealed when playing 
+	# the cards in your hand
+	var nullifiers = [44334434, 27842362, 27323373, 12312987, 73248927]
+	generate_hand(vrf_seed, fixed_seed, nullifiers)
+
+
+
 
 
 

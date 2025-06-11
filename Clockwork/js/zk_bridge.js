@@ -6,7 +6,7 @@ window.zkBridge = {
 // to be rewritten as a library.  This means changing its declaration from export.module to 
 // window.witnessCalculatorBuilder, reformatting all the function declarations for a library,
 // and adding the witnessCalculatorBuilder. prefix to any internal function calls
-calculateProof: async function(_inputs, _zk_circuit, _zk_proving_key, success, failure, callback) {
+calculateProof: async function(_inputs, _zk_circuit, _zk_proving_key, _witnessCalculator, success, failure, callback) {
     console.log(_inputs)
     try {
         // The key and circuit are read from the .PCK file as bytes and hex encoded
@@ -16,11 +16,10 @@ calculateProof: async function(_inputs, _zk_circuit, _zk_proving_key, success, f
   
         var inputs = JSON.parse(_inputs);
         console.log(inputs)
-  
         // Originally, I modified witness_calculator.js to turn it into a library.  But it's
         // in fact possible to just load it into the window by modifying the generated
         // script slightly (see the wrapper in gdscript)
-        var witnessCalculator = await window.witnessCalculatorBuilder(zk_circuit);
+        var witnessCalculator = await _witnessCalculator(zk_circuit);
         //var witnessCalculator = await window.witnessCalculatorBuilder.builder(zk_circuit);
     
         var witness = await witnessCalculator.calculateWTNSBin(inputs, 0);
@@ -52,7 +51,7 @@ calculateProof: async function(_inputs, _zk_circuit, _zk_proving_key, success, f
   },
 
   poseidonHash: function (inputs){
-  
+
     const poseidon = window.IdenJsCrypto.Poseidon;
   
     const hash = poseidon.hash(inputs);
