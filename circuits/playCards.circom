@@ -1,8 +1,6 @@
 pragma circom 2.0.0;
 
 include "utils/poseidon.circom";
-include "inSet.circom";
-include "PRNGSelect.circom";
 
 // Given a set of nullifiers and cards, produces a handHash 
 // and outputs the set of cards.  Validate the handHash on-chain against
