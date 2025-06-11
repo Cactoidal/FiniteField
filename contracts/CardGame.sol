@@ -35,6 +35,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     error GameHasNotStarted();
     error OutOfTime();
     error TooEarly();
+    error GameIDNotFound();
     
     error TransferFailed();
     error InsufficientTokensForAnte();
@@ -94,7 +95,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         uint256 objectiveVRF;
     }
 
-    struct gameStatus {
+    struct playerStatus {
         uint256 vrfSeed;
         uint256 ante;
         uint256 currentHand;
@@ -104,7 +105,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     }
 
     // Player address > GameToken contract > gameStatus
-    mapping (address => mapping(address => gameStatus)) public tokenGameStatus;
+    mapping (address => mapping(address => playerStatus)) public tokenPlayerStatus;
     mapping (address => mapping(address => bool)) public hasRequestedSeedForToken;
 
     mapping (uint256 => vrfRequest) public pendingVRFRequest;
@@ -135,7 +136,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         if (hasRequestedSeedForToken[player][gameToken]) revert AlreadyRequestedSeed();
 
         // Cannot request new seed if it has been used to create a hand.
-        if (tokenGameStatus[player][gameToken].currentHand != 0) revert AlreadyHaveHand();
+        if (tokenPlayerStatus[player][gameToken].currentHand != 0) revert AlreadyHaveHand();
 
         // The ante is an upfront cost for a seed; the seed is only eligible for use in 
         // games with the same ante.
@@ -143,7 +144,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         
         hasRequestedSeedForToken[player][gameToken] = true;
         depositBalance[player][gameToken] -= ante;
-        tokenGameStatus[player][gameToken].ante = ante; 
+        tokenPlayerStatus[player][gameToken].ante = ante; 
 
         uint estimate = IVRFWrapper(vrfWrapperAddress).estimateRequestPriceNative(
             callbackGasLimit, 
@@ -215,7 +216,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
             // The VRF seed for a new hand has been recorded; the player 
             // may now use it to generate a ZKP linked to a secret hand.
-            tokenGameStatus[player][gameToken].vrfSeed = vrfSeed;
+            tokenPlayerStatus[player][gameToken].vrfSeed = vrfSeed;
             hasRequestedSeedForToken[player][gameToken] = false;
         }
 
@@ -225,7 +226,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
             // The VRF seed for swapping cards has been recorded; the player 
             // may now use it to draw 2 cards and generate a new ZKP.
-            tokenGameStatus[player][gameToken].vrfSwapSeed = vrfSeed;
+            tokenPlayerStatus[player][gameToken].vrfSwapSeed = vrfSeed;
 
         }
 
@@ -255,7 +256,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
     function proveHand(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[3] calldata _pubSignals) public nonReentrant {
         address gameToken = address(uint160(_pubSignals[2]));
-        gameStatus memory playerInfo = tokenGameStatus[msg.sender][gameToken];
+        playerStatus memory playerInfo = tokenPlayerStatus[msg.sender][gameToken];
         uint256 playerVRFSeed = playerInfo.vrfSeed;
 
         if (playerVRFSeed == 0) revert InvalidVRFSeed();
@@ -269,7 +270,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         if (_pubSignals[1] != playerVRFSeed % FIELD_MODULUS) revert InvalidVRFSeed();
         
         // Hand hash cached for use in game
-        tokenGameStatus[msg.sender][gameToken].currentHand = _pubSignals[0];
+        tokenPlayerStatus[msg.sender][gameToken].currentHand = _pubSignals[0];
         
         emit ProvedHand(msg.sender, _pubSignals[0], playerVRFSeed);
     }
@@ -296,7 +297,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         for (uint i = 0; i < playerCount; i++) {
             address player = players[i];
             if (player == address(0)) revert ZeroAddress();
-            gameStatus memory playerInfo = tokenGameStatus[player][gameToken];
+            playerStatus memory playerInfo = tokenPlayerStatus[player][gameToken];
             if (playerInfo.gameId != 0) revert PlayerAlreadyInGame();
             if (playerInfo.currentHand == 0) revert PlayerLacksHand();
             if (playerInfo.ante != ante) revert AnteDoesNotMatch();
@@ -304,7 +305,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
             
             // Write to storage:
             // Put the player into the game.
-            tokenGameStatus[player][gameToken].gameId = gameIds;
+            tokenPlayerStatus[player][gameToken].gameId = gameIds;
         }
 
         game memory newSession;
@@ -348,15 +349,22 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         //emit Folded()
     }
 
-    function swapCards(address gameToken) public {
+    // DEBUG
+    // Double check _pubSignals size
+    function swapCards(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[3] calldata _pubSignals) public {
+        address gameToken = address(uint160(_pubSignals[2]));
         if (!withinTimeLimit(msg.sender, gameToken, TIME_LIMIT)) revert OutOfTime();
 
         //emit SwappedCards()
     }
     
 
+
     // Only callable after the first 3 minutes, before 15 minutes have elapsed
-    function playCards(address gameToken) public {
+    // DEBUG
+    // Double check _pubSignals size
+    function playCards(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[3] calldata _pubSignals) public {
+        address gameToken = address(uint160(_pubSignals[2]));
         if (withinTimeLimit(msg.sender, gameToken, TIME_LIMIT)) revert TooEarly();
         if (!withinTimeLimit(msg.sender, gameToken, END_LIMIT)) revert OutOfTime();
 
@@ -374,7 +382,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     function withinTimeLimit(address player, address gameToken, uint limit) public view returns(bool) {
         bool within = false;
 
-        uint gameId = tokenGameStatus[player][gameToken].gameId;
+        uint gameId = tokenPlayerStatus[player][gameToken].gameId;
         if (gameId == 0) revert GameHasNotStarted();
 
         uint startTimestamp = gameSession[gameId].startTimestamp;
@@ -388,7 +396,88 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     }
 
 
-    function getObjective(uint256 vrfSeed) public view returns(uint256) {
+
+
+
+    // In theory the scoring contract could be separate and even swappable
+
+    // Cards 1-10
+    // attractor is high card
+    // colors are silver and blue (?)
+
+    // in theory we could detect multiples, straights, flushes, full house by supplying
+    // an array of "claims" that are then checked against the provided cards
+    // uint[] calldata claims
+
+    // Because this function can only be called with valid cards, they do not need to be validated here
+    function scoreHand(uint256 vrfSeed, uint256[5] calldata cards) public pure returns(uint256) {
+        (uint256 objAttractor, uint256 objColor) = getObjective(vrfSeed);
+
+        // Right now the maximum score is 100,
+        // so could fit into a uint8 if desired
+        uint256 score = 0;
+
+        for (uint i = 0; i < 5; i++) {
+            uint256 card = cards[i];
+            uint8 cardColor = 1;
+            if (card > 10) {
+                cardColor = 2;
+            }
+
+            uint256 diff = 0;
+
+            if (card > objAttractor) {
+                diff = card - objAttractor;
+            }
+            else if (card < objAttractor) {
+                diff = objAttractor - card;
+            }
+
+            uint colorBonus = 1;
+
+            if (cardColor == objColor) {
+                colorBonus = 2;
+            }
+
+            // Cards closest to the attractor have a higher base score;
+            // cards of the objective color have their base score multiplied by 2
+            score += (10 - diff) * colorBonus;
+        }
+
+        return score;
+
+    }
+
+    
+    
+    function getObjective(uint256 vrfSeed) public pure returns(uint256, uint256) {
+        uint attractor = (vrfSeed % 10) + 1;
+        uint color = (vrfSeed % 2) + 1;
+
+        return (attractor, color);
+    }
+
+
+    function clearPlayerStatus(uint256 _gameId, address _player) internal {
+        uint256 gameId = _gameId;
+        address player = _player;
+        address gameToken = gameSession[gameId].gameToken;
+        if (gameToken == address(0)) revert GameIDNotFound();
+        if (player == address(0)) revert ZeroAddress();
+
+        playerStatus storage playerInfo = tokenPlayerStatus[player][gameToken];
+        if (playerInfo.gameId != gameId) revert GameIDNotFound();
+
+        // There needs to be some consideration if the player has already
+        // obtained a new seed, since this is technically possible
+        playerInfo.vrfSeed = 0;
+        playerInfo.ante = 0;
+        playerInfo.currentHand = 0;
+        playerInfo.gameId = 0;
+        playerInfo.vrfSwapSeed = 0;
+        playerInfo.hasRequestedSwap = false;
+
+   
 
     }
 
