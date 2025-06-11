@@ -6,17 +6,15 @@ import {ConfirmedOwner} from "@chainlink/contracts@1.4.0/src/v0.8/shared/access/
 import {LinkTokenInterface} from "@chainlink/contracts@1.4.0/src/v0.8/shared/interfaces/LinkTokenInterface.sol";
 import {VRFV2PlusWrapperConsumerBase} from "@chainlink/contracts@1.4.0/src/v0.8/vrf/dev/VRFV2PlusWrapperConsumerBase.sol";
 import {VRFV2PlusClient} from "@chainlink/contracts@1.4.0/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
-import {IVRFWrapper} from "./IVRFWrapper.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import {IWithdraw} from "./IWithdraw.sol";
 
-import {Groth16HandVerifier} from "./HandVerify.sol";
-//import {Groth16VSwapVerifier} from "./SwapVerify.sol";
-//import {Groth16VPlayVerifier} from "./PlayVerify.sol";
+import {IVRFWrapper} from "./interfaces/IVRFWrapper.sol";
+import {IWithdraw} from "./interfaces/IWithdraw.sol";
+import {IZKPVerifier} from "./interfaces/IZKPVerifier.sol";
 
 
-contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGuard, Groth16HandVerifier {
+contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGuard {
    
     error InvalidVRFSeed();
     error InvalidZKP();
@@ -42,13 +40,6 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     error InsufficientTokensForAnte();
     error InsufficientFundsForVRF();
 
-    event RequestSent(uint256 requestId, uint32 numWords);
-    event RequestFulfilled(
-        uint256 requestId,
-        uint256[] randomWords,
-        uint256 payment
-    );
-
     event ProvedHand(address player, uint256 handHash, uint256 playerVRFSeed);
     event StartingNewGame(uint256 gameId);
     event GameStarted(uint256 gameId, uint256 objectiveVRFSeed);
@@ -58,6 +49,13 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     event PlayedCards(address player, uint256 gameId, uint8[] cards);
     event GameConcluded(address[] winners, uint256 gameId, uint256 prize);
 
+    event RequestSent(uint256 requestId, uint32 numWords);
+    event RequestFulfilled(
+        uint256 requestId,
+        uint256[] randomWords,
+        uint256 payment
+    );
+
     struct RequestStatus {
         uint256 paid; 
         bool fulfilled; 
@@ -65,7 +63,6 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     }
     mapping(uint256 => RequestStatus)
         public s_requests; 
-
 
     uint32 public callbackGasLimit = 100000;
     uint16 public requestConfirmations = 3;
@@ -123,10 +120,12 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     // DEBUG
     uint mostRecentEstimate;
 
-    constructor() 
+    address gameZKPVerifier;
+
+    constructor(address _gameZKPVerifier) 
         ConfirmedOwner(msg.sender)
         VRFV2PlusWrapperConsumerBase(vrfWrapperAddress)
-    {}
+    {gameZKPVerifier = _gameZKPVerifier;}
 
     function buyHandSeed(address player, address gameToken, uint256 ante) payable public nonReentrant {
         if (player == address(0)) revert ZeroAddress();
@@ -254,7 +253,6 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     }
 
 
-
     function proveHand(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[3] calldata _pubSignals) public nonReentrant {
         address gameToken = address(uint160(_pubSignals[2]));
         gameStatus memory playerInfo = tokenGameStatus[msg.sender][gameToken];
@@ -262,7 +260,9 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
         if (playerVRFSeed == 0) revert InvalidVRFSeed();
         if (playerInfo.currentHand == 0) revert AlreadyHaveHand();
-        if (!this.verifyHandProof(_pA, _pB, _pC, _pubSignals)) revert InvalidZKP();
+
+
+        if (!IZKPVerifier(gameZKPVerifier).verifyHandProof(_pA, _pB, _pC, _pubSignals)) revert InvalidZKP();
         
         // Seed used in ZKP must match on-chain VRF seed
         // Apply the BN128 Field Modulus first, otherwise bigger values will not validate correctly
@@ -335,7 +335,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         
     }
 
-    // Only callable during the first 3 minutes
+    // Only callable during the first 3 minutes of a game
     function raise(address gameToken) public {
         if (!withinTimeLimit(msg.sender, gameToken, TIME_LIMIT)) revert OutOfTime();
 
@@ -427,46 +427,6 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         emit Withdrawn(msg.sender, balance);
     }
 
-
-
-
-
-
-
-
-    // MAINTENANCE
-
-
-    function getRequestStatus(
-        uint256 _requestId
-    )
-        external
-        view
-        returns (uint256 paid, bool fulfilled, uint256[] memory randomWords)
-    {
-        require(s_requests[_requestId].paid > 0, "request not found");
-        RequestStatus memory request = s_requests[_requestId];
-        return (request.paid, request.fulfilled, request.randomWords);
-    }
-
-    /**
-     * Allow withdraw of Link tokens from the contract
-     */
-    function withdrawLink() public onlyOwner {
-        LinkTokenInterface link = LinkTokenInterface(linkAddress);
-        require(
-            link.transfer(msg.sender, link.balanceOf(address(this))),
-            "Unable to transfer"
-        );
-    }
-
-    /// @notice withdrawNative withdraws the amount specified in amount to the owner
-    /// @param amount the amount to withdraw, in wei
-    function withdrawNative(uint256 amount) external onlyOwner {
-        (bool success, ) = payable(owner()).call{value: amount}("");
-        // solhint-disable-next-line gas-custom-errors
-        require(success, "withdrawNative failed");
-    }
 
 
     event Received(address, uint256);
