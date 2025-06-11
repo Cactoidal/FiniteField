@@ -23,7 +23,7 @@ contract GameToken is ERC20, ReentrancyGuard {
         uint256 mintAmount = msg.value;
         _mint(address(this), mintAmount);
         approve(depositContract, mintAmount);
-        IDeposit(depositContract).deposit(address(this), recipient, mintAmount);
+        IDeposit(depositContract).depositGameToken(address(this), recipient, mintAmount);
 
         emit Deposited(depositContract, recipient, mintAmount);
     }
