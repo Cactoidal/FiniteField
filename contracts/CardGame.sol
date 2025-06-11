@@ -44,6 +44,13 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         uint256 payment
     );
 
+    event boughtSeed();
+    event provedHand();
+    event gameStarted();
+    event swappedCards();
+    event playedCards();
+    event gameConcluded();
+
     struct RequestStatus {
         uint256 paid; 
         bool fulfilled; 
@@ -58,8 +65,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
     // SEPOLIA
     address public linkAddress = 0x779877A7B0D9E8603169DdbD7836e478b4624789;
-    address public wrapperAddress = 0x195f15F2d49d693cE265b4fB0fdDbE15b1850Cc1;
-    address public poolAddress;
+    address public vrfWrapperAddress = 0x195f15F2d49d693cE265b4fB0fdDbE15b1850Cc1;
     
     
     enum vrfRequestType {
@@ -80,7 +86,6 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         address gameToken;
         uint256 ante;
         uint256 maximumSpend;
-        uint256 gameId;
         uint256 startTimestamp;
         uint256 objectiveVRF;
     }
@@ -90,6 +95,8 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         uint256 ante;
         uint256 currentHand;
         uint256 gameId;
+        uint256 vrfSwapSeed;
+        bool hasRequestedSwap;
     }
 
     // Player > GameToken > handHash
@@ -111,7 +118,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
     constructor() 
         ConfirmedOwner(msg.sender)
-        VRFV2PlusWrapperConsumerBase(wrapperAddress)
+        VRFV2PlusWrapperConsumerBase(vrfWrapperAddress)
     {}
 
     function buyHandSeed(address player, address gameToken, uint256 ante) payable public nonReentrant {
@@ -131,7 +138,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         depositBalance[player][gameToken] -= ante;
         tokenGameStatus[player][gameToken].ante = ante; 
 
-        uint estimate = IVRFWrapper(wrapperAddress).estimateRequestPriceNative(
+        uint estimate = IVRFWrapper(vrfWrapperAddress).estimateRequestPriceNative(
             callbackGasLimit, 
             1, 
             tx.gasprice);
@@ -156,6 +163,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
 
     function requestSeed() internal returns (uint256) {
+        
         bytes memory extraArgs = VRFV2PlusClient._argsToBytes(
             VRFV2PlusClient.ExtraArgsV1({nativePayment: true})
         );
@@ -197,17 +205,33 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         if (requestType == vrfRequestType.NEW_HAND) {
             address player = pendingVRFRequest[_requestId].requester;
             address gameToken = pendingVRFRequest[_requestId].gameToken;
+
+            // The VRF seed for a new hand has been recorded; the player 
+            // may now use it to generate a ZKP linked to a secret hand.
             tokenGameStatus[player][gameToken].vrfSeed = vrfSeed;
             hasRequestedSeedForToken[player][gameToken] = false;
         }
 
         else if (requestType == vrfRequestType.CARD_SWAP) {
             address player = pendingVRFRequest[_requestId].requester;
+            address gameToken = pendingVRFRequest[_requestId].gameToken;
+
+            // The VRF seed for swapping cards has been recorded; the player 
+            // may now use it to draw 2 cards and generate a new ZKP.
+            tokenGameStatus[player][gameToken].vrfSwapSeed = vrfSeed;
 
         }
 
         else if (requestType == vrfRequestType.GAME_OBJECTIVE) {
             uint256 gameId = pendingVRFRequest[_requestId].gameId;
+            game storage startingGame = gameSession[gameId];
+
+            // Tells the players what kind of hands they need to win,
+            // and sets the time limits for the game.  At this point,
+            // the game has begun.
+            startingGame.objectiveVRF = vrfSeed;
+            startingGame.startTimestamp = block.timestamp;
+
         }
 
         
@@ -221,7 +245,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
 
 
-    function proveHand(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[3] calldata _pubSignals) public {
+    function proveHand(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[3] calldata _pubSignals) public nonReentrant {
         address gameToken = address(uint160(_pubSignals[2]));
         gameStatus memory playerInfo = tokenGameStatus[msg.sender][gameToken];
 
@@ -238,9 +262,16 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     }
 
 
-    function startGame(address gameToken, uint256 ante, uint256 maximumSpend, address[] calldata players) public {
+    function startGame(address gameToken, uint256 ante, uint256 maximumSpend, address[] calldata players) payable public nonReentrant {
         uint playerCount = players.length;
         if (playerCount > 6 || playerCount < 3) revert InvalidPlayerCount();
+
+        uint estimate = IVRFWrapper(vrfWrapperAddress).estimateRequestPriceNative(
+            callbackGasLimit, 
+            1, 
+            tx.gasprice);
+
+        if (msg.value < estimate) revert InsufficientFundsForVRF(); 
 
         for (uint i = 0; i < playerCount; i++) {
             gameStatus memory playerInfo = tokenGameStatus[players[i]][gameToken];
@@ -250,12 +281,45 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
             if (depositBalance[players[i]][gameToken] < maximumSpend) revert PlayerLacksTokens();
             
             tokenGameStatus[players[i]][gameToken].gameId = gameIds;
-
         }
+        game storage newSession = gameSession[gameIds];
+        newSession.players = players;
+        newSession.gameToken = gameToken;
+        newSession.ante = ante;
+        newSession.maximumSpend = maximumSpend;
+
+         // Call VRF.
+        uint256 requestId = requestSeed();
+
+        // Record the VRF callback arguments.
+        pendingVRFRequest[requestId].requestType = vrfRequestType.GAME_OBJECTIVE;
+        pendingVRFRequest[requestId].gameId = gameIds;
 
         gameIds++;
 
+        // Transfer any extra ETH back to the caller.
+        (bool success, ) = msg.sender.call{value: address(this).balance}("");
+        if (!success) revert TransferFailed();
+    }
 
+    function raise() public {
+
+    }
+
+    function fold() public {
+
+    }
+
+    function swapCards() public {
+
+    }
+
+    function playCards() public {
+
+    }
+
+    function concludeGame() public {
+        
     }
 
 
