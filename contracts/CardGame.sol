@@ -48,12 +48,14 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         uint256 payment
     );
 
-    event boughtSeed();
-    event provedHand();
-    event gameStarted();
-    event swappedCards();
-    event playedCards();
-    event gameConcluded();
+    event ProvedHand(address player, uint256 handHash, uint256 playerVRFSeed);
+    event StartingNewGame(uint256 gameId);
+    event GameStarted(uint256 gameId, uint256 objectiveVRFSeed);
+    event SwappedCards(address player, uint256 gameId, uint256 playerVRFSeed);
+    event Raised(address player, uint256 gameId, uint256 amount);
+    event Folded(address player, uint256 gameId, uint256 amount);
+    event PlayedCards(address player, uint256 gameId, uint8[] cards);
+    event GameConcluded(address[] winners, uint256 gameId, uint256 prize);
 
     struct RequestStatus {
         uint256 paid; 
@@ -239,6 +241,8 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
             startingGame.objectiveVRF = vrfSeed;
             startingGame.startTimestamp = block.timestamp;
 
+            emit GameStarted(gameId, vrfSeed);
+
         }
 
         
@@ -255,17 +259,20 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     function proveHand(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[3] calldata _pubSignals) public nonReentrant {
         address gameToken = address(uint160(_pubSignals[2]));
         gameStatus memory playerInfo = tokenGameStatus[msg.sender][gameToken];
+        uint256 playerVRFSeed = playerInfo.vrfSeed;
 
-        if (playerInfo.vrfSeed == 0) revert InvalidVRFSeed();
+        if (playerVRFSeed == 0) revert InvalidVRFSeed();
         if (playerInfo.currentHand == 0) revert AlreadyHaveHand();
-        if (!this.verifyProof(_pA, _pB, _pC, _pubSignals)) revert InvalidZKP();
+        if (!this.verifyHandProof(_pA, _pB, _pC, _pubSignals)) revert InvalidZKP();
         
         // Seed used in ZKP must match on-chain VRF seed
         // Apply the BN128 Field Modulus first, otherwise bigger values will not validate correctly
-        if (_pubSignals[1] != playerInfo.vrfSeed % FIELD_MODULUS) revert InvalidVRFSeed();
+        if (_pubSignals[1] != playerVRFSeed % FIELD_MODULUS) revert InvalidVRFSeed();
         
         // Hand hash cached for use in game
         tokenGameStatus[msg.sender][gameToken].currentHand = _pubSignals[0];
+        
+        emit ProvedHand(msg.sender, _pubSignals[0], playerVRFSeed);
     }
 
 
@@ -309,52 +316,67 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         pendingVRFRequest[requestId].requestType = vrfRequestType.GAME_OBJECTIVE;
         pendingVRFRequest[requestId].gameId = gameIds;
 
+        emit StartingNewGame(gameIds);
+
         gameIds++;
 
         // Transfer any extra ETH back to the caller.
         (bool success, ) = msg.sender.call{value: address(this).balance}("");
         if (!success) revert TransferFailed();
+
+        
     }
 
+    // Only callable during the first 3 minutes
     function raise(address gameToken) public {
-        if (!withinTimeLimit(msg.sender, gameToken)) revert OutOfTime();
+        if (!withinTimeLimit(msg.sender, gameToken, TIME_LIMIT)) revert OutOfTime();
+
+        // emit Raised()
     }
 
     function fold(address gameToken) public {
-        if (!withinTimeLimit(msg.sender, gameToken)) revert OutOfTime();
+        if (!withinTimeLimit(msg.sender, gameToken, TIME_LIMIT)) revert OutOfTime();
 
+        //emit Folded()
     }
 
     function swapCards(address gameToken) public {
-        if (!withinTimeLimit(msg.sender, gameToken)) revert OutOfTime();
+        if (!withinTimeLimit(msg.sender, gameToken, TIME_LIMIT)) revert OutOfTime();
 
+        //emit SwappedCards()
     }
+    
 
+    // Only callable after the first 3 minutes, before 15 minutes have elapsed
     function playCards(address gameToken) public {
-        if (withinTimeLimit(msg.sender, gameToken)) revert TooEarly();
+        if (withinTimeLimit(msg.sender, gameToken, TIME_LIMIT)) revert TooEarly();
+        if (!withinTimeLimit(msg.sender, gameToken, END_LIMIT)) revert OutOfTime();
 
+        //emit PlayedCards()
     }
 
-    function concludeGame() public {
+    // Only callable after 15 minutes have elapsed
+    function concludeGame(address gameToken) public {
+        if (withinTimeLimit(msg.sender, gameToken, END_LIMIT)) revert TooEarly();
         
+        //emit GameConcluded()
     }
 
 
-    function withinTimeLimit(address player, address gameToken) public view returns(bool) {
+    function withinTimeLimit(address player, address gameToken, uint limit) public view returns(bool) {
         bool within = false;
-        
+
         uint gameId = tokenGameStatus[player][gameToken].gameId;
+        if (gameId == 0) revert GameHasNotStarted();
+
         uint startTimestamp = gameSession[gameId].startTimestamp;
         if (startTimestamp == 0) revert GameHasNotStarted();
 
-        if ((block.timestamp - startTimestamp) < TIME_LIMIT ) {
+        if ((block.timestamp - startTimestamp) < limit ) {
             within = true;
         }
 
         return within;
-
-
-
     }
 
 
@@ -379,6 +401,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
         emit Deposited(tokenContract, player, amount);
     }
+
 
     function withdrawGameToken(address tokenContract) public nonReentrant {
         if (!IWithdraw(tokenContract).isGameToken()) revert NotGameToken();
@@ -438,8 +461,6 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     receive() external payable {
         emit Received(msg.sender, msg.value);
     }
-
-    
 
 
 }
