@@ -18,6 +18,12 @@ import {Groth16VHandVerifier} from "./HandVerify.sol";
 
 contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGuard, Groth16VHandVerifier {
    
+    error AlreadyHaveSeed();
+    error AlreadyRequestedSeed();
+    error TransferFailed();
+    error InsufficientTokensForAnte();
+    error InsufficientFundsForVRF();
+
     event RequestSent(uint256 requestId, uint32 numWords);
     event RequestFulfilled(
         uint256 requestId,
@@ -43,20 +49,46 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     address public poolAddress;
     
     
-    
+    enum vrfRequestType {
+        GAME_OBJECTIVE,
+        NEW_HAND,
+        CARD_SWAP
+    }
 
-    uint public ENTRY_PRICE = 0.001 ether;
-    mapping (address => bool) public requestedSeed;
-    mapping (uint256 => address) public seedRequest;
+    struct vrfRequest {
+        vrfRequestType requestType;
+        address requester;
+        address gameToken;
+        uint256 gameId;
+    }
+
+    struct game {
+        address[] players;
+        address gameToken;
+        uint256 ante;
+        uint256 maximumSpend;
+        uint256 gameId;
+    }
+
+    struct seed {
+        uint256 vrfSeed;
+        uint256 ante;
+    }
+
+    // Player > GameToken > handHash
+    mapping (address => mapping(address => seed)) public seedForToken;
+    mapping (address => mapping(address => bool)) public hasRequestedSeedForToken;
+
+ 
+    mapping (uint256 => vrfRequest) public pendingVRFRequest;
     mapping (address => uint256) public currentSeed;
     mapping (address => uint256) public currentHand;
 
-    mapping (address => uint256) public governancePower;
 
     // The Scalar Field size used by Circom.  
     uint256 FIELD_MODULUS = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
 
-    
+    // DEBUG
     uint mostRecentEstimate;
 
     constructor() 
@@ -64,26 +96,36 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         VRFV2PlusWrapperConsumerBase(wrapperAddress)
     {}
 
-    function buyHandSeed(address player) payable public {
-        //require(!requestedSeed[player]);
-        //require(msg.value >= ENTRY_PRICE);
+    function buyHandSeed(address player, address gameToken, uint256 ante) payable public nonReentrant {
+        if (player == address(0)) revert ZeroAddress();
+        if (seedForToken[player][gameToken].vrfSeed != 0) revert AlreadyHaveSeed();
+        if (hasRequestedSeedForToken[player][gameToken]) revert AlreadyRequestedSeed();
+        if (depositBalance[player][gameToken] > ante) revert InsufficientTokensForAnte();
+        
+        hasRequestedSeedForToken[player][gameToken] = true;
+        depositBalance[player][gameToken] -= ante;
+        seedForToken[player][gameToken].ante = ante; 
 
-        // msg.value must be sufficient to pay the VRF call + ENTRY_PRICE
         uint estimate = IVRFWrapper(wrapperAddress).estimateRequestPriceNative(
             callbackGasLimit, 
             1, 
             tx.gasprice);
+
         // DEBUG
         mostRecentEstimate = estimate;
-        require(msg.value >= estimate);  // + ENTRY_PRICE
+        if (msg.value < estimate) revert InsufficientFundsForVRF(); 
         
-        // call VRF
-        seedRequest[requestSeed()] = player;
-        requestedSeed[player] = true;
+        // Call VRF.
+        uint256 requestId = requestSeed();
+
+        // Record the VRF callback arguments.
+        pendingVRFRequest[requestId].requestType = vrfRequestType.NEW_HAND;
+        pendingVRFRequest[requestId].requester = player;
+        pendingVRFRequest[requestId].gameToken = gameToken;
         
-        // transfer remaining ETH to the pool contract
-        (bool success, ) = poolAddress.call{value: address(this).balance}("");
-        require(success, "Transfer failed");
+        // Transfer any extra ETH back to the caller.
+        (bool success, ) = msg.sender.call{value: address(this).balance}("");
+        if (!success) revert TransferFailed();
 
     }
 
@@ -124,14 +166,32 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         s_requests[_requestId].fulfilled = true;
         s_requests[_requestId].randomWords = _randomWords;
 
-        address player = seedRequest[_requestId];
-        currentSeed[player] = _randomWords[0];
+        uint256 vrfSeed = _randomWords[0];
+        vrfRequestType requestType = pendingVRFRequest[_requestId].requestType;
 
+        if (requestType == vrfRequestType.NEW_HAND) {
+            address player = pendingVRFRequest[_requestId].requester;
+            address gameToken = pendingVRFRequest[_requestId].gameToken;
+            seedForToken[player][gameToken].vrfSeed = vrfSeed;
+            hasRequestedSeedForToken[player][gameToken] = false;
+        }
+
+        else if (requestType == vrfRequestType.CARD_SWAP) {
+            address player = pendingVRFRequest[_requestId].requester;
+
+        }
+
+        else if (requestType == vrfRequestType.GAME_OBJECTIVE) {
+            uint256 gameId = pendingVRFRequest[_requestId].gameId;
+        }
+
+        
         emit RequestFulfilled(
             _requestId,
             _randomWords,
             s_requests[_requestId].paid
         );
+        
     }
 
 
@@ -197,7 +257,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     event Deposited(address indexed tokenContract, address indexed recipient, uint256 amount);
     event Withdrawn(address indexed user, uint256 amount);
 
-    function deposit(address tokenContract, address player, uint256 amount) external nonReentrant {
+    function depositGameToken(address tokenContract, address player, uint256 amount) external nonReentrant {
         if (!IWithdraw(tokenContract).isGameToken()) revert NotGameToken();
         if (amount == 0) revert ZeroAmount();
         if (player == address(0)) revert ZeroAddress();
@@ -208,7 +268,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         emit Deposited(tokenContract, player, amount);
     }
 
-    function withdraw(address tokenContract) public nonReentrant {
+    function withdrawGameToken(address tokenContract) public nonReentrant {
         if (!IWithdraw(tokenContract).isGameToken()) revert NotGameToken();
 
         uint256 balance = depositBalance[msg.sender][tokenContract];
