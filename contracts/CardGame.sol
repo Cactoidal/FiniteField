@@ -32,6 +32,10 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     error PlayerLacksHand();
     error AnteDoesNotMatch();
     error PlayerLacksTokens();
+
+    error GameHasNotStarted();
+    error OutOfTime();
+    error TooEarly();
     
     error TransferFailed();
     error InsufficientTokensForAnte();
@@ -107,6 +111,9 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     mapping (uint256 => vrfRequest) public pendingVRFRequest;
     uint256 public gameIds = 1;
     mapping (uint256 => game) public gameSession;
+
+    uint8 constant TIME_LIMIT = 180;
+    uint16 constant END_LIMIT = 900;
   
 
 
@@ -262,9 +269,13 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     }
 
 
-    function startGame(address gameToken, uint256 ante, uint256 maximumSpend, address[] calldata players) payable public nonReentrant {
+    function startGame(address _gameToken, uint256 _ante, uint256 _maximumSpend, address[] calldata players) payable public nonReentrant {
         uint playerCount = players.length;
         if (playerCount > 6 || playerCount < 3) revert InvalidPlayerCount();
+
+        address gameToken = _gameToken;
+        uint256 ante = _ante;
+        uint256 maximumSpend = _maximumSpend;
 
         uint estimate = IVRFWrapper(vrfWrapperAddress).estimateRequestPriceNative(
             callbackGasLimit, 
@@ -282,11 +293,14 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
             
             tokenGameStatus[players[i]][gameToken].gameId = gameIds;
         }
-        game storage newSession = gameSession[gameIds];
+
+        game memory newSession;
         newSession.players = players;
         newSession.gameToken = gameToken;
         newSession.ante = ante;
         newSession.maximumSpend = maximumSpend;
+
+        gameSession[gameIds] = newSession;
 
          // Call VRF.
         uint256 requestId = requestSeed();
@@ -302,24 +316,45 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         if (!success) revert TransferFailed();
     }
 
-    function raise() public {
+    function raise(address gameToken) public {
+        if (!withinTimeLimit(msg.sender, gameToken)) revert OutOfTime();
+    }
+
+    function fold(address gameToken) public {
+        if (!withinTimeLimit(msg.sender, gameToken)) revert OutOfTime();
 
     }
 
-    function fold() public {
+    function swapCards(address gameToken) public {
+        if (!withinTimeLimit(msg.sender, gameToken)) revert OutOfTime();
 
     }
 
-    function swapCards() public {
-
-    }
-
-    function playCards() public {
+    function playCards(address gameToken) public {
+        if (withinTimeLimit(msg.sender, gameToken)) revert TooEarly();
 
     }
 
     function concludeGame() public {
         
+    }
+
+
+    function withinTimeLimit(address player, address gameToken) public view returns(bool) {
+        bool within = false;
+        
+        uint gameId = tokenGameStatus[player][gameToken].gameId;
+        uint startTimestamp = gameSession[gameId].startTimestamp;
+        if (startTimestamp == 0) revert GameHasNotStarted();
+
+        if ((block.timestamp - startTimestamp) < TIME_LIMIT ) {
+            within = true;
+        }
+
+        return within;
+
+
+
     }
 
 
