@@ -199,7 +199,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
     function deposit(address tokenContract, address player, uint256 amount) external nonReentrant {
         if (!IWithdraw(tokenContract).isGameToken()) revert NotGameToken();
-        if (!(amount > 0)) revert ZeroAmount();
+        if (amount == 0) revert ZeroAmount();
         if (player == address(0)) revert ZeroAddress();
 
         IERC20(tokenContract).transferFrom(tokenContract, player, amount);
@@ -212,7 +212,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         if (!IWithdraw(tokenContract).isGameToken()) revert NotGameToken();
 
         uint256 balance = depositBalance[msg.sender][tokenContract];
-        if (!(balance > 0)) revert ZeroAmount();
+        if (balance == 0) revert ZeroAmount();
 
         depositBalance[msg.sender][tokenContract] = 0;
         IWithdraw(tokenContract).burnAndWithdraw(msg.sender, balance);
