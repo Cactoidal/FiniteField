@@ -10,9 +10,15 @@ contract GameToken is ERC20, ReentrancyGuard {
 
     constructor() ERC20("GameToken", "GAME") {}
 
+    error TransferFailed();
+    error ZeroAddress();
+    error ZeroAmount();
+    event Deposited(address indexed depositContract, address indexed recipient, uint256 amount);
+    event Withdrawn(address indexed user, uint256 amount);
+
     function mintAndDeposit(address recipient, address depositContract) public payable nonReentrant {
-        require(msg.value > 0, "Amount must be > 0");
-        require(recipient != address(0), "Cannot deposit to zero address");
+        if (msg.value == 0) revert ZeroAmount();
+        if (recipient == address(0)) revert ZeroAddress();
         
         uint256 mintAmount = msg.value;
         _mint(address(this), mintAmount);
@@ -23,12 +29,12 @@ contract GameToken is ERC20, ReentrancyGuard {
     }
 
     function burnAndWithdraw(uint256 amount, address recipient) public nonReentrant {
-        require(amount > 0, "Amount must be > 0");
-        require(recipient != address(0), "Cannot withdraw to zero address");
+        if (amount == 0) revert ZeroAmount();
+        if (recipient == address(0)) revert ZeroAddress();
+    
         _burn(msg.sender, amount);
         (bool success, ) = recipient.call{value: amount}("");
-        require(success, "ETH transfer failed");
-
+        if (!success) revert TransferFailed();
         emit Withdrawn(recipient, amount);
     }
 
@@ -38,8 +44,7 @@ contract GameToken is ERC20, ReentrancyGuard {
 
     receive() external payable {}
 
-    event Deposited(address indexed depositContract, address indexed recipient, uint256 amount);
-    event Withdrawn(address indexed user, uint256 amount);
+    
 
 
 }
