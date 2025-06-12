@@ -36,15 +36,16 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     }
 
     struct game {
+        address gameToken;
         uint256 startTimestamp;
         uint256 objectiveSeed;
         uint256 maximumSpend;
         uint256 totalPot;
         uint256 highBid;
-        address gameToken;
         address[TABLE_SIZE] players;
         uint256[TABLE_SIZE] scores;
         bool[TABLE_SIZE] hasRequestedSwap;
+        bool hasConcluded;
     }
 
     struct playerStatus {
@@ -395,25 +396,67 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
         // Validate against hand hash
 
+        uint256 score;
+        uint256 playerIndex = player.playerIndex;
+
+        // Update the score array
+        gameSessions[gameId].scores[playerIndex] = score;
+
         //emit PlayedCards(address player, uint256 gameId, uint8[] cards);
     }
 
-    // Only callable after 15 minutes have elapsed
-    function concludeGame(address gameToken) public {
-        playerStatus memory playerInfo = tokenPlayerStatus[msg.sender][gameToken];
-        uint gameId = playerInfo.gameId;
-        if (gameId == 0) revert GameIDNotFound();
-        if (withinTimeLimit(gameId, END_LIMIT)) revert TooEarly();
 
-        // cycle through addresses to check which have submitted proofs
-        // score them
-        // determine winners
-        // add up antes and bets
-        // distribute to winners
+    // Only callable after 15 minutes have elapsed
+    function concludeGame(uint256 gameId) public nonReentrant {
+
+        game memory session = gameSessions[gameId];
+        address gameToken = session.gameToken;
+     
+        // If no gameToken is recorded, the session doesn't exist
+        if (gameToken == address(0)) revert GameIDNotFound();
+        if (withinTimeLimit(gameId, END_LIMIT)) revert TooEarly();
+        if (session.hasConcluded) revert GameAlreadyEnded();
+
+        uint[4] memory scores = session.scores;
+        address[4] memory players = session.players;
+
+        uint highScore = 0;
+        address[] memory winners;
+        
+        // Determine the high score
+        for (uint i = 0; i < TABLE_SIZE; i++) {
+            if (scores[i] > highScore) {
+                highScore = scores[i];
+            }
+        }
+
+        // Get all winners (since ties are possible)
+         for (uint j = 0; j < TABLE_SIZE; j++) {
+            if (scores[j] == highScore) {
+                winners.push_back(players[j]);
+            }
+        }
+
+        uint winnerCount = winners.length;
+        uint prizeAmount = session.totalPot / winnerCount;
+
+        // highScore of 0 indicates all players folded
+        // Distribute prizes to winners
+        if (highScore != 0) {
+            for (uint k = 0; k < winnerCount; k++) {
+                depositBalance[winners[k]][gameToken] += prizeAmount;
+            }
+
+        }
+
+
+      
+        // add up bets for automatching players who haven't folded
         // clear player status for any players who have not folded/proved
         
-
-        //emit GameConcluded(winners, gameId, prize);
+        session.hasConcluded = true;
+        
+        emit GameConcluded(winners, gameId, prizeAmount);
     }
 
 
@@ -590,6 +633,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     error TooEarly();
     error GameIDNotFound();
     error InvalidRaise();
+    error GameAlreadyEnded();
     
     error TransferFailed();
     error InsufficientTokensForAnte();
