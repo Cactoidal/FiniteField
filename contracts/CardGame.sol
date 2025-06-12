@@ -92,9 +92,8 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     struct game {
         address[] players;
         address gameToken;
-        uint256 ante;
         uint256 maximumSpend;
-        uint256 highBet;
+        uint256 totalPot;
         uint256 startTimestamp;
         uint256 objectiveVRF;
     }
@@ -289,6 +288,9 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         if (ante == 0) revert ZeroAmount();
         if (maximumSpend <= ante) revert InvalidMaximumSpend();
 
+        // The ante is considered part of the spend
+        maximumSpend -= ante;
+
         uint playerCount = players.length;
         if (playerCount > 6 || playerCount < 3) revert InvalidPlayerCount();
 
@@ -316,7 +318,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         game memory newSession;
         newSession.players = players;
         newSession.gameToken = gameToken;
-        newSession.ante = ante;
+        newSession.totalPot = ante * playerCount;
         newSession.maximumSpend = maximumSpend;
 
         // Write to storage:
@@ -354,6 +356,8 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         if (amount + bidAmount > maximumSpend) revert InvalidRaise();
 
         tokenPlayerStatus[msg.sender][gameToken].bidAmount += amount;
+        
+        depositBalance[msg.sender][gameToken] -= amount;
     
         emit Raised(msg.sender, gameId, amount);
     }
@@ -366,6 +370,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         if (!withinTimeLimit(gameId, TIME_LIMIT)) revert OutOfTime();
 
         // fold
+        clearPlayerStatus(gameId, msg.sender);
 
         emit Folded(msg.sender, gameId);
     }
