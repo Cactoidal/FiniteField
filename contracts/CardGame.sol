@@ -52,6 +52,8 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         uint256 ante;
         uint256 currentHand;
         uint256 gameId;
+        uint256 playerIndex;
+        uint256 totalBidAmount;
         bool hasRequestedSeed;
     }
 
@@ -60,8 +62,11 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     // Player address > GameToken contract > playerStatus
     mapping (address => mapping(address => playerStatus)) public tokenPlayerStatus;
 
+    // Player cannot withdraw tokens during games
+    mapping (address => mapping(address => bool)) public withdrawLocked;
+
     mapping (uint256 => game) public gameSessions;
-    uint256 public gameIds = 1;
+    uint256 public latestGameId = 1;
 
     // DEBUG
     uint mostRecentEstimate;
@@ -198,7 +203,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
     function proveHand(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[3] calldata _pubSignals) public nonReentrant {
         address gameToken = address(uint160(_pubSignals[2]));
-        playerStatus memory player = tokenPlayerStatus[msg.sender][gameToken];
+        playerStatus storage player = tokenPlayerStatus[msg.sender][gameToken];
         uint256 playerVRFSeed = player.vrfSeed;
 
         if (playerVRFSeed == 0) revert InvalidVRFSeed();
@@ -211,25 +216,18 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         if (_pubSignals[1] != playerVRFSeed % FIELD_MODULUS) revert InvalidVRFSeed();
         
         // Hand hash cached for use in game
-        tokenPlayerStatus[msg.sender][gameToken].currentHand = _pubSignals[0];
+        player.currentHand = _pubSignals[0];
         
         emit ProvedHand(msg.sender, _pubSignals[0], playerVRFSeed);
     }
 
 
-    function startGame(address _gameToken, uint256 _ante, uint256 _maximumSpend, address[] calldata players) payable public nonReentrant {
+    function startGame(address _gameToken, uint256 _ante, uint256 _maximumSpend, address[TABLE_SIZE] calldata players) payable public nonReentrant {
         address gameToken = _gameToken;
         uint256 ante = _ante;
         uint256 maximumSpend = _maximumSpend;
 
         if (ante == 0) revert ZeroAmount();
-        if (maximumSpend <= ante) revert InvalidMaximumSpend();
-
-        // The ante is considered part of the spend
-        maximumSpend -= ante;
-
-        uint playerCount = players.length;
-        if (playerCount > 6 || playerCount < 3) revert InvalidPlayerCount();
 
         uint estimate = IVRFWrapper(vrfWrapperAddress).estimateRequestPriceNative(
             callbackGasLimit, 
@@ -238,63 +236,65 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
         if (msg.value < estimate) revert InsufficientFundsForVRF(); 
 
-        for (uint i = 0; i < playerCount; i++) {
-            address player = players[i];
-            if (player == address(0)) revert ZeroAddress();
-            playerStatus memory playerInfo = tokenPlayerStatus[player][gameToken];
-            if (playerInfo.gameId != 0) revert PlayerAlreadyInGame();
-            if (playerInfo.currentHand == 0) revert PlayerLacksHand();
-            if (playerInfo.ante != ante) revert AnteDoesNotMatch();
-            if (depositBalance[player][gameToken] < maximumSpend) revert PlayerLacksTokens();
+        for (uint i = 0; i < TABLE_SIZE; i++) {
+            address playerAddress = players[i];
+            if (playerAddress == address(0)) revert ZeroAddress();
+
+            playerStatus storage player = tokenPlayerStatus[playerAddress][gameToken];
+            if (player.gameId != 0) revert PlayerAlreadyInGame();
+            if (player.currentHand == 0) revert PlayerLacksHand();
+            if (player.ante != ante) revert AnteDoesNotMatch();
+            if (depositBalance[playerAddress][gameToken] < maximumSpend) revert PlayerLacksTokens();
             
-            // Write to storage:
-            // Put the player into the game.
-            tokenPlayerStatus[player][gameToken].gameId = gameIds;
+            player.playerIndex = i;
+            player.gameId = latestGameId;
+            // Cannot withdraw the gameToken during the duration of the game
+            withdrawLocked[playerAddress][gameToken] = true;
         }
 
-        game memory newSession;
+        game storage newSession = gameSessions[latestGameId];
         newSession.players = players;
         newSession.gameToken = gameToken;
-        newSession.totalPot = ante * playerCount;
+        newSession.totalPot = ante * TABLE_SIZE;
         newSession.maximumSpend = maximumSpend;
-
-        // Write to storage:
-        // Initialize the game.
-        gameSession[gameIds] = newSession;
 
          // Call VRF.
         uint256 requestId = requestSeed();
 
         // Record the VRF callback arguments.
-        pendingVRFRequest[requestId].requestType = vrfRequestType.GAME_OBJECTIVE;
-        pendingVRFRequest[requestId].gameId = gameIds;
+        vrfRequest storage request = pendingVRFRequest[requestId];
+        request.requestType = vrfRequestType.GAME_OBJECTIVE;
+        request.gameId = latestGameId;
 
-        emit StartingNewGame(gameIds);
+        emit StartingNewGame(latestGameId);
 
-        gameIds++;
+        latestGameId++;
 
         // Transfer any extra ETH back to the caller.
         (bool success, ) = msg.sender.call{value: address(this).balance}("");
         if (!success) revert TransferFailed();
-
-        
     }
+
 
     // Only callable during the first 3 minutes of a game
     function raise(address gameToken, uint amount) public nonReentrant {
-        playerStatus memory playerInfo = tokenPlayerStatus[msg.sender][gameToken];
-        uint gameId = playerInfo.gameId;
+        playerStatus storage player = tokenPlayerStatus[msg.sender][gameToken];
+        
+        uint gameId = player.gameId;
         if (gameId == 0) revert GameIDNotFound();
         if (!withinTimeLimit(gameId, TIME_LIMIT)) revert OutOfTime();
 
-        uint256 maximumSpend = gameSession[gameId].maximumSpend;
-        uint256 bidAmount = playerInfo.bidAmount;        
+        uint256 maximumSpend = gameSessions[gameId].maximumSpend;
         
-        if (amount + bidAmount > maximumSpend) revert InvalidRaise();
+        if (amount + player.totalBidAmount > maximumSpend) revert InvalidRaise();
 
-        tokenPlayerStatus[msg.sender][gameToken].bidAmount += amount;
+        player.totalBidAmount += amount;
         
         depositBalance[msg.sender][gameToken] -= amount;
+
+        if (player.totalBidAmount > maximumSpend) {
+            gameSessions[gameId].maximumSpend = player.totalBidAmount;
+        }
     
         emit Raised(msg.sender, gameId, amount);
     }
@@ -386,7 +386,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
         if (gameId == 0) revert GameHasNotStarted();
 
-        uint startTimestamp = gameSession[gameId].startTimestamp;
+        uint startTimestamp = gameSessions[gameId].startTimestamp;
         if (startTimestamp == 0) revert GameHasNotStarted();
 
         if ((block.timestamp - startTimestamp) < limit ) {
@@ -462,14 +462,14 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     }
 
 
-    function clearPlayerStatus(uint256 _gameId, address _player) internal {
+    function clearPlayerStatus(uint256 _gameId, address _playerAddress) internal {
         uint256 gameId = _gameId;
-        address player = _player;
-        address gameToken = gameSession[gameId].gameToken;
+        address playerAddress = _playerAddress;
+        address gameToken = gameSessions[gameId].gameToken;
         if (gameToken == address(0)) revert GameIDNotFound();
-        if (player == address(0)) revert ZeroAddress();
+        if (playerAddress == address(0)) revert ZeroAddress();
 
-        playerStatus storage playerInfo = tokenPlayerStatus[player][gameToken];
+        playerStatus storage playerInfo = tokenPlayerStatus[playerAddress][gameToken];
         if (playerInfo.gameId != gameId) revert GameIDNotFound();
 
         // There needs to be some consideration if the player has already
@@ -480,6 +480,9 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         playerInfo.gameId = 0;
         playerInfo.vrfSwapSeed = 0;
         playerInfo.hasRequestedSwap = false;
+
+        // Allow withdrawals again
+        withdrawLocked[playerAddress][gameToken] = false;
 
    
 
@@ -511,7 +514,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     function withdrawGameToken(address tokenContract) public nonReentrant {
         if (!IWithdraw(tokenContract).isGameToken()) revert NotGameToken();
 
-        if (tokenPlayerStatus[msg.sender][tokenContract].gameId != 0) revert CannotWithdrawDuringGame();
+        if (withdrawLocked[msg.sender][tokenContract]) revert CannotWithdrawDuringGame();
 
         uint256 balance = depositBalance[msg.sender][tokenContract];
         if (balance == 0) revert ZeroAmount();
