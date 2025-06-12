@@ -15,71 +15,17 @@ import {IZKPVerifier} from "./interfaces/IZKPVerifier.sol";
 
 
 contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGuard {
-   
-    error InvalidVRFSeed();
-    error InvalidZKP();
-    error AlreadyRequestedSeed();
-    error AlreadyHaveHand();
-    error AlreadySwapped();
-    error NotInGame();
-    error NotEnoughTimePassed();
-    error DoesNotMatchHandHash();
 
-    error InvalidPlayerCount();
-    error PlayerAlreadyInGame();
-    error PlayerLacksHand();
-    error AnteDoesNotMatch();
-    error PlayerLacksTokens();
-    error InvalidMaximumSpend();
+    // CONSTANTS
+    uint8 constant TIME_LIMIT = 180;
+    uint16 constant END_LIMIT = 900;
+    uint8 constant TABLE_SIZE = 4;
+    // The Scalar Field size used by Circom.  
+    uint256 constant FIELD_MODULUS = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
 
-    error GameHasNotStarted();
-    error OutOfTime();
-    error TooEarly();
-    error GameIDNotFound();
-    error InvalidRaise();
-    
-    error TransferFailed();
-    error InsufficientTokensForAnte();
-    error InsufficientFundsForVRF();
-    error CannotWithdrawDuringGame();
-
-    event ProvedHand(address player, uint256 handHash, uint256 playerVRFSeed);
-    event StartingNewGame(uint256 gameId);
-    event GameStarted(uint256 gameId, uint256 objectiveVRFSeed);
-    event SwappingCards(address player, uint256 gameId);
-    event ProvedSwap(address player, uint256 gameId, uint256 playerVRFSeed);
-    event Raised(address player, uint256 gameId, uint256 amount);
-    event Folded(address player, uint256 gameId);
-    event PlayedCards(address player, uint256 gameId, uint8[] cards);
-    event GameConcluded(address[] winners, uint256 gameId, uint256 prize);
-
-    event RequestSent(uint256 requestId, uint32 numWords);
-    event RequestFulfilled(
-        uint256 requestId,
-        uint256[] randomWords,
-        uint256 payment
-    );
-
-    struct RequestStatus {
-        uint256 paid; 
-        bool fulfilled; 
-        uint256[] randomWords;
-    }
-    mapping(uint256 => RequestStatus)
-        public s_requests; 
-
-    uint32 public callbackGasLimit = 100000;
-    uint16 public requestConfirmations = 3;
-
-    // SEPOLIA
-    address public linkAddress = 0x779877A7B0D9E8603169DdbD7836e478b4624789;
-    address public vrfWrapperAddress = 0x195f15F2d49d693cE265b4fB0fdDbE15b1850Cc1;
-    
-    
     enum vrfRequestType {
-        GAME_OBJECTIVE,
-        NEW_HAND,
-        CARD_SWAP
+        CARDS,
+        GAME_OBJECTIVE
     }
 
     struct vrfRequest {
@@ -90,12 +36,15 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     }
 
     struct game {
-        address[] players;
-        address gameToken;
+        uint256 startTimestamp;
+        uint256 objectiveSeed;
         uint256 maximumSpend;
         uint256 totalPot;
-        uint256 startTimestamp;
-        uint256 objectiveVRF;
+        uint256 highBid;
+        address gameToken;
+        address[TABLE_SIZE] players;
+        uint256[TABLE_SIZE] scores;
+        bool[TABLE_SIZE] hasRequestedSwap;
     }
 
     struct playerStatus {
@@ -103,28 +52,23 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         uint256 ante;
         uint256 currentHand;
         uint256 gameId;
-        uint256 bidAmount;
-        uint256 vrfSwapSeed;
-        bool hasRequestedSwap;
+        bool hasRequestedSeed;
     }
 
-    // Player address > GameToken contract > gameStatus
-    mapping (address => mapping(address => playerStatus)) public tokenPlayerStatus;
-    mapping (address => mapping(address => bool)) public hasRequestedSeedForToken;
-
     mapping (uint256 => vrfRequest) public pendingVRFRequest;
-    uint256 public gameIds = 1;
-    mapping (uint256 => game) public gameSession;
 
-    uint8 constant TIME_LIMIT = 180;
-    uint16 constant END_LIMIT = 900;
-  
-    // The Scalar Field size used by Circom.  
-    uint256 constant FIELD_MODULUS = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
+    // Player address > GameToken contract > playerStatus
+    mapping (address => mapping(address => playerStatus)) public tokenPlayerStatus;
+
+    mapping (uint256 => game) public gameSessions;
+    uint256 public gameIds = 1;
 
     // DEBUG
     uint mostRecentEstimate;
 
+    // CONSTRUCTOR ADDRESSES
+    // SEPOLIA
+    address vrfWrapperAddress = 0x195f15F2d49d693cE265b4fB0fdDbE15b1850Cc1;
     address gameZKPVerifier;
 
     constructor(address _gameZKPVerifier) 
@@ -132,24 +76,27 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         VRFV2PlusWrapperConsumerBase(vrfWrapperAddress)
     {gameZKPVerifier = _gameZKPVerifier;}
 
-    function buyHandSeed(address player, address gameToken, uint256 ante) payable public nonReentrant {
-        if (player == address(0)) revert ZeroAddress();
+    function buyHandSeed(address playerAddress, address gameToken, uint256 ante) payable public nonReentrant {
+        if (playerAddress == address(0)) revert ZeroAddress();
         if (ante == 0) revert ZeroAmount();
+
+        playerStatus storage player = tokenPlayerStatus[playerAddress][gameToken];
         
         // Cannot request new seed for this token while a request is already pending.
-        if (hasRequestedSeedForToken[player][gameToken]) revert AlreadyRequestedSeed();
+        if (player.hasRequestedSeed) revert AlreadyRequestedSeed();
 
         // Cannot request new seed if it has been used to create a hand.
-        if (tokenPlayerStatus[player][gameToken].currentHand != 0) revert AlreadyHaveHand();
+        if (player.currentHand != 0) revert AlreadyHaveHand();
 
         // The ante is an upfront cost for a seed; the seed is only eligible for use in 
         // games with the same ante.
-        if (depositBalance[player][gameToken] > ante) revert InsufficientTokensForAnte();
+        if (depositBalance[playerAddress][gameToken] > ante) revert InsufficientTokensForAnte();
         
-        hasRequestedSeedForToken[player][gameToken] = true;
-        depositBalance[player][gameToken] -= ante;
-        tokenPlayerStatus[player][gameToken].ante = ante; 
+        player.hasRequestedSeed = true;
+        player.ante = ante; 
 
+        depositBalance[playerAddress][gameToken] -= ante;
+        
         uint estimate = IVRFWrapper(vrfWrapperAddress).estimateRequestPriceNative(
             callbackGasLimit, 
             1, 
@@ -163,9 +110,10 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         uint256 requestId = requestSeed();
 
         // Record the VRF callback arguments.
-        pendingVRFRequest[requestId].requestType = vrfRequestType.NEW_HAND;
-        pendingVRFRequest[requestId].requester = player;
-        pendingVRFRequest[requestId].gameToken = gameToken;
+        vrfRequest storage request = pendingVRFRequest[requestId];
+        request.requestType = vrfRequestType.CARDS;
+        request.requester = playerAddress;
+        request.gameToken = gameToken;
         
         // Transfer any extra ETH back to the caller.
         (bool success, ) = msg.sender.call{value: address(this).balance}("");
@@ -214,34 +162,24 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         uint256 vrfSeed = _randomWords[0];
         vrfRequestType requestType = pendingVRFRequest[_requestId].requestType;
 
-        if (requestType == vrfRequestType.NEW_HAND) {
-            address player = pendingVRFRequest[_requestId].requester;
-            address gameToken = pendingVRFRequest[_requestId].gameToken;
+        if (requestType == vrfRequestType.CARDS) {
+            vrfRequest memory request = pendingVRFRequest[_requestId];
+            address playerAddress = request.requester;
+            address gameToken = request.gameToken;
 
-            // The VRF seed for a new hand has been recorded; the player 
+            // The VRF seed for drawing cards has been recorded; the player 
             // may now use it to generate a ZKP linked to a secret hand.
-            tokenPlayerStatus[player][gameToken].vrfSeed = vrfSeed;
-            hasRequestedSeedForToken[player][gameToken] = false;
+            tokenPlayerStatus[playerAddress][gameToken].vrfSeed = vrfSeed;
         }
 
-        else if (requestType == vrfRequestType.CARD_SWAP) {
-            address player = pendingVRFRequest[_requestId].requester;
-            address gameToken = pendingVRFRequest[_requestId].gameToken;
-
-            // The VRF seed for swapping cards has been recorded; the player 
-            // may now use it to draw 2 cards and generate a new ZKP.
-            tokenPlayerStatus[player][gameToken].vrfSwapSeed = vrfSeed;
-
-        }
 
         else if (requestType == vrfRequestType.GAME_OBJECTIVE) {
             uint256 gameId = pendingVRFRequest[_requestId].gameId;
-            game storage startingGame = gameSession[gameId];
+            game storage startingGame = gameSessions[gameId];
 
-            // Tells the players what kind of hands they need to win,
-            // and sets the time limits for the game.  At this point,
-            // the game has begun.
-            startingGame.objectiveVRF = vrfSeed;
+            // Randomly determines the game objective (i.e. the scoring criteria)
+            // and starts the game.
+            startingGame.objectiveSeed = vrfSeed;
             startingGame.startTimestamp = block.timestamp;
 
             emit GameStarted(gameId, vrfSeed);
@@ -260,12 +198,11 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
     function proveHand(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[3] calldata _pubSignals) public nonReentrant {
         address gameToken = address(uint160(_pubSignals[2]));
-        playerStatus memory playerInfo = tokenPlayerStatus[msg.sender][gameToken];
-        uint256 playerVRFSeed = playerInfo.vrfSeed;
+        playerStatus memory player = tokenPlayerStatus[msg.sender][gameToken];
+        uint256 playerVRFSeed = player.vrfSeed;
 
         if (playerVRFSeed == 0) revert InvalidVRFSeed();
-        if (playerInfo.currentHand == 0) revert AlreadyHaveHand();
-
+        if (player.currentHand != 0) revert AlreadyHaveHand();
 
         if (!IZKPVerifier(gameZKPVerifier).verifyHandProof(_pA, _pB, _pC, _pubSignals)) revert InvalidZKP();
         
@@ -592,5 +529,67 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         emit Received(msg.sender, msg.value);
     }
 
+
+    // ERRORS
+
+    error InvalidVRFSeed();
+    error InvalidZKP();
+    error AlreadyRequestedSeed();
+    error AlreadyHaveHand();
+    error AlreadySwapped();
+    error NotInGame();
+    error NotEnoughTimePassed();
+    error DoesNotMatchHandHash();
+
+    error InvalidPlayerCount();
+    error PlayerAlreadyInGame();
+    error PlayerLacksHand();
+    error AnteDoesNotMatch();
+    error PlayerLacksTokens();
+    error InvalidMaximumSpend();
+
+    error GameHasNotStarted();
+    error OutOfTime();
+    error TooEarly();
+    error GameIDNotFound();
+    error InvalidRaise();
+    
+    error TransferFailed();
+    error InsufficientTokensForAnte();
+    error InsufficientFundsForVRF();
+    error CannotWithdrawDuringGame();
+
+    // EVENTS
+
+    event ProvedHand(address player, uint256 handHash, uint256 playerVRFSeed);
+    event StartingNewGame(uint256 gameId);
+    event GameStarted(uint256 gameId, uint256 objectiveVRFSeed);
+    event SwappingCards(address player, uint256 gameId);
+    event ProvedSwap(address player, uint256 gameId, uint256 playerVRFSeed);
+    event Raised(address player, uint256 gameId, uint256 amount);
+    event Folded(address player, uint256 gameId);
+    event PlayedCards(address player, uint256 gameId, uint8[] cards);
+    event GameConcluded(address[] winners, uint256 gameId, uint256 prize);
+
+    event RequestSent(uint256 requestId, uint32 numWords);
+    event RequestFulfilled(
+        uint256 requestId,
+        uint256[] randomWords,
+        uint256 payment
+    );
+
+    
+
+    // VRF CONFIG
+    uint32 public callbackGasLimit = 100000;
+    uint16 public requestConfirmations = 3;
+
+    struct RequestStatus {
+        uint256 paid; 
+        bool fulfilled; 
+        uint256[] randomWords;
+    }
+    mapping(uint256 => RequestStatus)
+        public s_requests; 
 
 }
