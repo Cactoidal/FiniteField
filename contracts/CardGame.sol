@@ -82,12 +82,20 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     // CONSTRUCTOR ADDRESSES
     // SEPOLIA
     address vrfWrapperAddress = 0x195f15F2d49d693cE265b4fB0fdDbE15b1850Cc1;
-    address gameZKPVerifier;
 
-    constructor(address _gameZKPVerifier) 
+    // DEBUG (need the addresses)
+    address handZKPVerifier;
+    address swapZKPVerifier;
+    address playZKPVerifier;
+
+    constructor(address _handZKPVerifier, address _swapZKPVerifier, address _playZKPVerifier) 
         ConfirmedOwner(msg.sender)
         VRFV2PlusWrapperConsumerBase(vrfWrapperAddress)
-    {gameZKPVerifier = _gameZKPVerifier;}
+    {
+        handZKPVerifier = _handZKPVerifier;
+        swapZKPVerifier = _swapZKPVerifier;
+        playZKPVerifier = _playZKPVerifier;
+    }
 
     function buyHandSeed(address playerAddress, address gameToken, uint256 ante) payable public nonReentrant {
         if (playerAddress == address(0)) revert ZeroAddress();
@@ -222,7 +230,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         if (player.currentHand != 0) revert AlreadyHaveHand();
 
         // Validate the proof.
-        if (!IZKPVerifier(gameZKPVerifier).verifyHandProof(_pA, _pB, _pC, _pubSignals)) revert InvalidZKP();
+        if (!IZKPVerifier(handZKPVerifier).verifyHandProof(_pA, _pB, _pC, _pubSignals)) revert InvalidZKP();
         
         // Seed used in ZKP must match on-chain VRF seed
         // Apply the modulus first, otherwise bigger values will not validate correctly
@@ -394,9 +402,8 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         uint256 vrfSwapSeed = gameSessions[gameId].vrfSwapSeeds[player.playerIndex];
         if (vrfSwapSeed == 0) revert HaveNotSwapped();
         
-        // DEBUG
         // Validate the proof.
-        //if (!IZKPVerifier(gameZKPVerifier).verifySwapProof(_pA, _pB, _pC, _pubSignals)) revert InvalidZKP();
+        if (!IZKPVerifier(swapZKPVerifier).verifySwapProof(_pA, _pB, _pC, _pubSignals)) revert InvalidZKP();
 
         // Validate against old hand
         if (_pubSignals[0] != player.currentHand) revert InvalidHash();
@@ -428,9 +435,8 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         game storage session = gameSessions[gameId];
         if (session.scores[playerIndex] != 0) revert AlreadySubmittedScore();
 
-        // DEBUG
         // Validate the proof.
-        //if (!IZKPVerifier(gameZKPVerifier).verifyPlayProof(_pA, _pB, _pC, _pubSignals)) revert InvalidZKP();
+        if (!IZKPVerifier(playZKPVerifier).verifyPlayProof(_pA, _pB, _pC, _pubSignals)) revert InvalidZKP();
 
         // Validate against hand hash
         if (_pubSignals[0] != player.currentHand) revert InvalidHash();
