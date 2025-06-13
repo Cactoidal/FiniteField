@@ -18,8 +18,14 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     // CONSTANTS
     uint8 constant TIME_LIMIT = 180;
     uint16 constant END_LIMIT = 900;
-    uint8 constant TABLE_SIZE = 4;
-    // The Scalar Field size used by Circom.  
+    
+    // DEBUG
+    uint8 constant TABLE_SIZE = 1;
+    //uint8 constant TABLE_SIZE = 4;
+
+    // The Scalar Field size used by Circom.
+    // Because VRF seeds can sometimes exceed this value, it must be applied as a modulus to the on-chain
+    // seed before validating it against the proof's public output.
     uint256 constant FIELD_MODULUS = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
 
     enum vrfRequestType {
@@ -89,11 +95,8 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
         playerStatus storage player = tokenPlayerStatus[playerAddress][gameToken];
         
-        // Cannot request new seed for this token while a request is already pending.
+        // Cannot request new seed for this token until the previous one has been used in a game.
         if (player.hasRequestedSeed) revert AlreadyRequestedSeed();
-
-        // Cannot request new seed if it has been used to create a hand.
-        if (player.currentHand != 0) revert AlreadyHaveHand();
 
         // The ante is an upfront cost for a seed; the seed is only eligible for use in 
         // games with the same ante.
@@ -331,9 +334,12 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     }
 
     // NOTE 
+    // DEBUG
     // It could make sense to require a commitment here: a hash of the 
     // two discarded cards, which will be used as an input to the ZKP
-    // and then validated on-chain as a public signal
+    // and then validated on-chain as a public signal.  Right now,
+    // you are not obligated to prove the swap, meaning you have the choice
+    // to stick with your old hand if the new cards do not improve your score.
 
     // Only callable during the first 2 minutes of the game
     function swapCards(address gameToken) public payable {
