@@ -31,6 +31,9 @@ template Swap() {
     signal input indices[drawSize];
     signal input nullifiers[drawSize];
 
+    signal input discardNullifier;
+
+    signal output discardedCardHash;
     signal output oldHandHash;
     signal output newHandHash;
 
@@ -69,6 +72,11 @@ template Swap() {
         cardHashes[i] = cardHasher[i].out;
     }
 
+    component discardedHasher = Poseidon(3);
+    discardedHasher.inputs[0] <== indices[0];
+    discardedHasher.inputs[1] <== indices[1];
+    discardedHasher.inputs[2] <== discardNullifier;
+    discardedCardHash <== discardedHasher.out;
 
     var newCards[handSize];
 
