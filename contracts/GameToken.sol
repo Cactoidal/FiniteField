@@ -30,7 +30,7 @@ contract GameToken is ERC20, ReentrancyGuard {
     }
 
     // potentially could use ratio instead of assuming always 1:1
-    function burnAndWithdraw(uint256 amount, address recipient) public nonReentrant {
+    function burnAndWithdraw(address recipient, uint256 amount) public nonReentrant {
         if (amount == 0) revert ZeroAmount();
         if (recipient == address(0)) revert ZeroAddress();
     
