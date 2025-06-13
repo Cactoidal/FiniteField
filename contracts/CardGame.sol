@@ -221,6 +221,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         if (playerVRFSeed == 0) revert InvalidVRFSeed();
         if (player.currentHand != 0) revert AlreadyHaveHand();
 
+        // Validate the proof.
         if (!IZKPVerifier(gameZKPVerifier).verifyHandProof(_pA, _pB, _pC, _pubSignals)) revert InvalidZKP();
         
         // Seed used in ZKP must match on-chain VRF seed
@@ -377,8 +378,6 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
     }
 
-    // DEBUG
-    // Double check _pubSignals size
 
     // Only callable during the first 3 minutes of the game
     function proveSwapCards(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[4] calldata _pubSignals) public {
@@ -396,8 +395,8 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         if (vrfSwapSeed == 0) revert HaveNotSwapped();
         
         // DEBUG
-        // Check the proof
-        // here
+        // Validate the proof.
+        //if (!IZKPVerifier(gameZKPVerifier).verifySwapProof(_pA, _pB, _pC, _pubSignals)) revert InvalidZKP();
 
         // Validate against old hand
         if (_pubSignals[0] != player.currentHand) revert InvalidHash();
@@ -415,9 +414,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
 
     // Only callable after the first 3 minutes, before 15 minutes have elapsed
-    // DEBUG
-    // Double check _pubSignals size
-    function playCards(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[7] calldata _pubSignals) public {
+    function provePlayCards(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[7] calldata _pubSignals) public {
         
         // Check that the player is eligible to reveal their cards
         address gameToken = address(uint160(_pubSignals[1]));
@@ -432,8 +429,8 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         if (session.scores[playerIndex] != 0) revert AlreadySubmittedScore();
 
         // DEBUG
-        // Check the proof
-        // here
+        // Validate the proof.
+        //if (!IZKPVerifier(gameZKPVerifier).verifyPlayProof(_pA, _pB, _pC, _pubSignals)) revert InvalidZKP();
 
         // Validate against hand hash
         if (_pubSignals[0] != player.currentHand) revert InvalidHash();
