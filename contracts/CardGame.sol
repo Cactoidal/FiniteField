@@ -54,7 +54,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         address[TABLE_SIZE] folded;
         uint256[TABLE_SIZE] scores;
         uint256[TABLE_SIZE] vrfSwapSeeds;
-        bool[TABLE_SIZE] hasRequestedSwap;
+        uint256[TABLE_SIZE] discardedCards;
         address[] winners;
     }
 
@@ -351,7 +351,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     // to stick with your old hand if the new cards do not improve your score.
 
     // Only callable during the first 2 minutes of the game
-    function swapCards(address gameToken) public payable {
+    function swapCards(address gameToken, uint256 discardedCardsHash) public payable {
         // Check if the player is eligible to swap cards.
         playerStatus storage player = tokenPlayerStatus[msg.sender][gameToken];
         uint gameId = player.gameId;
@@ -362,8 +362,12 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         game storage session = gameSessions[gameId];
 
         // A player can only swap cards once per game.
-        if (session.hasRequestedSwap[playerIndex]) revert AlreadySwapped();
-        session.hasRequestedSwap[playerIndex] = true;
+        if (session.discardedCards[playerIndex] != 0) revert AlreadySwapped();
+
+        if (discardedCardsHash == 0) revert InvalidDiscard();
+        // A hash of the discarded card indices is committed,
+        // to be later validated against the ZKP's public output.
+        session.discardedCards[playerIndex] = discardedCardsHash;
 
         // Check VRF fee.
         uint estimate = IVRFWrapper(vrfWrapperAddress).estimateRequestPriceNative(
@@ -388,32 +392,36 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
 
     // Only callable during the first 3 minutes of the game
-    function proveSwapCards(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[4] calldata _pubSignals) public {
+    function proveSwapCards(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[5] calldata _pubSignals) public {
         
         // Check that the player is eligible to prove the swap.
-        address gameToken = address(uint160(_pubSignals[3]));
+        address gameToken = address(uint160(_pubSignals[4]));
 
         playerStatus storage player = tokenPlayerStatus[msg.sender][gameToken];
         uint gameId = player.gameId;
         if (gameId == 0) revert GameIDNotFound();
         if (!withinTimeLimit(gameId, TIME_LIMIT)) revert OutOfTime();
 
+        game storage session = gameSessions[gameId];
         // The player must have requested a VRF seed to swap cards.
-        uint256 vrfSwapSeed = gameSessions[gameId].vrfSwapSeeds[player.playerIndex];
+        uint256 vrfSwapSeed = session.vrfSwapSeeds[player.playerIndex];
         if (vrfSwapSeed == 0) revert HaveNotSwapped();
         
         // Validate the proof.
         if (!IZKPVerifier(swapZKPVerifier).verifySwapProof(_pA, _pB, _pC, _pubSignals)) revert InvalidZKP();
 
+        // Validate the discarded cards against the committed hash.
+        if (session.discardedCards[player.playerIndex] != _pubSignals[0]) revert InvalidDiscard();
+
         // Validate against old hand
-        if (_pubSignals[0] != player.currentHand) revert InvalidHash();
+        if (player.currentHand != _pubSignals[1]) revert InvalidHash();
 
         // Validate VRF seed
         // Must apply modulus for large numbers to validate correctly
-        if (vrfSwapSeed != _pubSignals[2] % FIELD_MODULUS) revert InvalidVRFSeed();
+        if (vrfSwapSeed != _pubSignals[3] % FIELD_MODULUS) revert InvalidVRFSeed();
 
         // Update to new hand
-        player.currentHand = _pubSignals[1];
+        player.currentHand = _pubSignals[2];
 
         emit ProvedSwap(msg.sender, gameId, vrfSwapSeed);
     }
@@ -495,6 +503,12 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
             // could wait to see what other players reveal
             // during the proving phase, and dodge paying
             // the highBid if their hand isn't a winner.
+
+            // DEBUG
+            // small problem; proving also exits the game, without debiting the player.
+            // So they must be assessed when they exit, not here.  This check is still
+            // necessary.  Simply change "folded" to "exited", and charge the player
+            // when they prove their hand
             if (folded[j] != playerAddress) {
                 playerStatus storage player = tokenPlayerStatus[playerAddress][gameToken];
                 uint256 diff =  highBid - player.totalBidAmount;
@@ -704,6 +718,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     error TooEarly();
     error GameIDNotFound();
     error InvalidRaise();
+    error InvalidDiscard();
     error AlreadySwapped();
     error HaveNotSwapped();
     error InvalidHash();
