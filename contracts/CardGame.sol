@@ -378,12 +378,11 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     // Double check _pubSignals size
 
     // Only callable during the first 3 minutes of the game
-    function proveSwapCards(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[3] calldata _pubSignals) public {
+    function proveSwapCards(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[4] calldata _pubSignals) public {
         
         // Check that the player is eligible to prove the swap
 
-
-        address gameToken = address(uint160(_pubSignals[2]));
+        address gameToken = address(uint160(_pubSignals[3]));
         playerStatus memory player = tokenPlayerStatus[msg.sender][gameToken];
         uint gameId = player.gameId;
         if (gameId == 0) revert GameIDNotFound();
@@ -393,8 +392,18 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         uint256 vrfSwapSeed = gameSessions[gameId].vrfSwapSeeds[player.playerIndex];
         if (vrfSwapSeed == 0) revert HaveNotSwapped();
         
+        // DEBUG
+        // Check the proof
+        // here
+
+        // Validate against old hand
+        if (_pubSignals[0] != player.currentHand) revert InvalidHash();
 
         // Validate vrf seed
+        if (vrfSwapSeed != _pubSignals[2]) revert InvalidVRFSeed();
+
+        // Update to new hand
+        player.currentHand = _pubSignals[1];
 
         emit ProvedSwap(msg.sender, gameId, vrfSwapSeed);
     }
@@ -404,15 +413,19 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     // Only callable after the first 3 minutes, before 15 minutes have elapsed
     // DEBUG
     // Double check _pubSignals size
-    function playCards(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[8] calldata _pubSignals) public {
+    function playCards(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[7] calldata _pubSignals) public {
         
         // Check that the player is eligible to reveal their cards
-        address gameToken = address(uint160(_pubSignals[2]));
+        address gameToken = address(uint160(_pubSignals[1]));
         playerStatus memory player = tokenPlayerStatus[msg.sender][gameToken];
         uint gameId = player.gameId;
         if (gameId == 0) revert GameIDNotFound();
         if (withinTimeLimit(gameId, TIME_LIMIT)) revert TooEarly();
         if (!withinTimeLimit(gameId, END_LIMIT)) revert OutOfTime();
+        
+        uint256 playerIndex = player.playerIndex;
+        game storage session = gameSessions[gameId];
+        if (session.scores[playerIndex] != 0) revert AlreadySubmittedScore();
 
         // DEBUG
         // Check the proof
@@ -422,11 +435,9 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         if (_pubSignals[0] != player.currentHand) revert InvalidHash();
         
         // Get the score
-        game storage session = gameSessions[gameId];
-        uint256[5] memory cards = [_pubSignals[3], _pubSignals[4], _pubSignals[5], _pubSignals[6], _pubSignals[7]];
+        uint256[5] memory cards = [_pubSignals[2], _pubSignals[3], _pubSignals[4], _pubSignals[5], _pubSignals[6]];
         uint256 score = scoreHand(session.objectiveSeed, cards);
-        uint256 playerIndex = player.playerIndex;
-
+        
         // Update the score array
         session.scores[playerIndex] = score;
 
@@ -666,6 +677,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     error AlreadySwapped();
     error HaveNotSwapped();
     error InvalidHash();
+    error AlreadySubmittedScore();
     error GameAlreadyEnded();
     
     error TransferFailed();
