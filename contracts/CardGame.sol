@@ -13,7 +13,6 @@ import {IVRFWrapper} from "./interfaces/IVRFWrapper.sol";
 import {IWithdraw} from "./interfaces/IWithdraw.sol";
 import {IZKPVerifier} from "./interfaces/IZKPVerifier.sol";
 
-
 contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGuard {
 
     // CONSTANTS
@@ -171,7 +170,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         vrfRequestType requestType = pendingVRFRequest[_requestId].requestType;
 
         if (requestType == vrfRequestType.NEW_HAND) {
-            vrfRequest memory request = pendingVRFRequest[_requestId];
+            vrfRequest storage request = pendingVRFRequest[_requestId];
             address playerAddress = request.requester;
             address gameToken = request.gameToken;
 
@@ -181,15 +180,14 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         }
 
         else if (requestType == vrfRequestType.SWAP_CARDS) {
-            vrfRequest memory request = pendingVRFRequest[_requestId];
+            vrfRequest storage request = pendingVRFRequest[_requestId];
             uint256 gameId = request.gameId;
             uint256 playerIndex = request.playerIndex;
 
-            // This VRF seed can be used to generate a ZKP linked to
-            // a new, modified secret hand.
+            // This VRF seed can be used to swap out 2 cards and generate
+            // a new ZKP linked to the modified hand.
             gameSessions[gameId].vrfSwapSeeds[playerIndex] = vrfSeed;
         }
-
 
         else if (requestType == vrfRequestType.GAME_OBJECTIVE) {
             uint256 gameId = pendingVRFRequest[_requestId].gameId;
@@ -223,7 +221,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         if (!IZKPVerifier(gameZKPVerifier).verifyHandProof(_pA, _pB, _pC, _pubSignals)) revert InvalidZKP();
         
         // Seed used in ZKP must match on-chain VRF seed
-        // Apply the BN128 Field Modulus first, otherwise bigger values will not validate correctly
+        // Apply the modulus first, otherwise bigger values will not validate correctly
         if (_pubSignals[1] != playerVRFSeed % FIELD_MODULUS) revert InvalidVRFSeed();
         
         // Hand hash cached for use in game
@@ -248,11 +246,11 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
         if (msg.value < estimate) revert InsufficientFundsForVRF(); 
 
+        // Check if all players are eligible to play
         for (uint i = 0; i < TABLE_SIZE; i++) {
             address playerAddress = players[i];
             if (playerAddress == address(0)) revert ZeroAddress();
 
-            // Check if all players are eligible to play
             playerStatus storage player = tokenPlayerStatus[playerAddress][gameToken];
             if (player.gameId != 0) revert PlayerAlreadyInGame();
             if (player.currentHand == 0) revert PlayerLacksHand();
@@ -317,7 +315,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     // Only callable during the first 3 minutes of a game
     function fold(address gameToken) public {
         // Check if the player is eligible to fold.
-        playerStatus memory player = tokenPlayerStatus[msg.sender][gameToken];
+        playerStatus storage player = tokenPlayerStatus[msg.sender][gameToken];
         uint gameId = player.gameId;
         if (gameId == 0) revert GameIDNotFound();
         if (!withinTimeLimit(gameId, TIME_LIMIT)) revert OutOfTime();
@@ -340,7 +338,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     // Only callable during the first 2 minutes of the game
     function swapCards(address gameToken) public payable {
         // Check if the player is eligible to swap cards.
-        playerStatus memory player = tokenPlayerStatus[msg.sender][gameToken];
+        playerStatus storage player = tokenPlayerStatus[msg.sender][gameToken];
         uint gameId = player.gameId;
         if (gameId == 0) revert GameIDNotFound();
         if (!withinTimeLimit(gameId, TIME_LIMIT - 60)) revert OutOfTime();
@@ -380,14 +378,14 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     function proveSwapCards(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[4] calldata _pubSignals) public {
         
         // Check that the player is eligible to prove the swap.
-
         address gameToken = address(uint160(_pubSignals[3]));
-        playerStatus memory player = tokenPlayerStatus[msg.sender][gameToken];
+
+        playerStatus storage player = tokenPlayerStatus[msg.sender][gameToken];
         uint gameId = player.gameId;
         if (gameId == 0) revert GameIDNotFound();
         if (!withinTimeLimit(gameId, TIME_LIMIT)) revert OutOfTime();
 
-        // The player must request a VRF seed to swap cards.
+        // The player must have requested a VRF seed to swap cards.
         uint256 vrfSwapSeed = gameSessions[gameId].vrfSwapSeeds[player.playerIndex];
         if (vrfSwapSeed == 0) revert HaveNotSwapped();
         
@@ -417,7 +415,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         
         // Check that the player is eligible to reveal their cards
         address gameToken = address(uint160(_pubSignals[1]));
-        playerStatus memory player = tokenPlayerStatus[msg.sender][gameToken];
+        playerStatus storage player = tokenPlayerStatus[msg.sender][gameToken];
         uint gameId = player.gameId;
         if (gameId == 0) revert GameIDNotFound();
         if (withinTimeLimit(gameId, TIME_LIMIT)) revert TooEarly();
@@ -451,7 +449,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     // Only callable after 15 minutes have elapsed
     function concludeGame(uint256 gameId) public nonReentrant {
 
-        game memory session = gameSessions[gameId];
+        game storage session = gameSessions[gameId];
         address gameToken = session.gameToken;
      
         // If no gameToken is recorded, the session doesn't exist
@@ -549,11 +547,12 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     // attractor is high card
     // colors are silver and blue (?)
 
-    // in theory we could detect multiples, straights, flushes, full house by supplying
-    // an array of "claims" that are then checked against the provided cards
+    // NOTE
+    // for more advanced scoring, we could detect multiples, straights, flushes, full house, etc,
+    // by supplying an array of "claims" that are then checked against the provided cards, i.e.
     // uint[] calldata claims
 
-    // Because this function can only be called with valid cards, they do not need to be validated here
+    // Cards do not need to be validated here
     function scoreHand(uint256 vrfSeed, uint256[5] memory cards) public pure returns(uint256) {
         (uint256 objAttractor, uint256 objColor) = getObjective(vrfSeed);
 
@@ -604,7 +603,8 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         return (attractor, color);
     }
 
-
+    // Players manually remove themselves from a game when they fold or prove their hand;
+    // AFK players are also automatically removed when a game is concluded.
     function clearPlayerStatus(uint256 _gameId, address _playerAddress) internal {
         uint256 gameId = _gameId;
         address playerAddress = _playerAddress;
@@ -653,7 +653,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         if (!IWithdraw(tokenContract).isGameToken()) revert NotGameToken();
 
         // Because games require players to have enough tokens to cover the maximumSpend,
-        // withdrawals are forbidden while the player is still in a game session.
+        // withdrawals of the gameToken are forbidden while the player is still in a game session.
         if (tokenPlayerStatus[msg.sender][tokenContract].gameId != 0) revert CannotWithdrawDuringGame();
 
         uint256 balance = depositBalance[msg.sender][tokenContract];
