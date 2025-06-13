@@ -44,12 +44,12 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         uint256 maximumSpend;
         uint256 totalPot;
         uint256 highBid;
+        bool hasConcluded;
         address[TABLE_SIZE] players;
-        address[] winners;
         uint256[TABLE_SIZE] scores;
         uint256[TABLE_SIZE] vrfSwapSeeds;
         bool[TABLE_SIZE] hasRequestedSwap;
-        bool hasConcluded;
+        address[] winners;
     }
 
     struct playerStatus {
@@ -404,7 +404,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     // Only callable after the first 3 minutes, before 15 minutes have elapsed
     // DEBUG
     // Double check _pubSignals size
-    function playCards(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[3] calldata _pubSignals) public {
+    function playCards(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[8] calldata _pubSignals) public {
         
         // Check that the player is eligible to reveal their cards
         address gameToken = address(uint160(_pubSignals[2]));
@@ -414,15 +414,23 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         if (withinTimeLimit(gameId, TIME_LIMIT)) revert TooEarly();
         if (!withinTimeLimit(gameId, END_LIMIT)) revert OutOfTime();
 
-        // Validate against hand hash
+        // DEBUG
+        // Check the proof
+        // here
 
-        uint256 score;
+        // Validate against hand hash
+        if (_pubSignals[0] != player.currentHand) revert InvalidHash();
+        
+        // Get the score
+        game storage session = gameSessions[gameId];
+        uint256[5] memory cards = [_pubSignals[3], _pubSignals[4], _pubSignals[5], _pubSignals[6], _pubSignals[7]];
+        uint256 score = scoreHand(session.objectiveSeed, cards);
         uint256 playerIndex = player.playerIndex;
 
         // Update the score array
-        gameSessions[gameId].scores[playerIndex] = score;
+        session.scores[playerIndex] = score;
 
-        //emit PlayedCards(address player, uint256 gameId, uint8[] cards);
+        emit PlayedCards(msg.sender, gameId, cards);
     }
 
 
@@ -510,7 +518,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     // uint[] calldata claims
 
     // Because this function can only be called with valid cards, they do not need to be validated here
-    function scoreHand(uint256 vrfSeed, uint256[5] calldata cards) public pure returns(uint256) {
+    function scoreHand(uint256 vrfSeed, uint256[5] memory cards) public pure returns(uint256) {
         (uint256 objAttractor, uint256 objColor) = getObjective(vrfSeed);
 
         // Right now the maximum score is 100,
@@ -657,6 +665,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     error InvalidRaise();
     error AlreadySwapped();
     error HaveNotSwapped();
+    error InvalidHash();
     error GameAlreadyEnded();
     
     error TransferFailed();
@@ -673,7 +682,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     event ProvedSwap(address player, uint256 gameId, uint256 playerVRFSeed);
     event Raised(address player, uint256 gameId, uint256 amount);
     event Folded(address player, uint256 gameId);
-    event PlayedCards(address player, uint256 gameId, uint8[] cards);
+    event PlayedCards(address player, uint256 gameId, uint256[5] cards);
     event GameConcluded(address[] winners, uint256 gameId, uint256 prize);
 
     event RequestSent(uint256 requestId, uint32 numWords);
@@ -694,7 +703,8 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         bool fulfilled; 
         uint256[] randomWords;
     }
+    
     mapping(uint256 => RequestStatus)
-        public s_requests; 
+    public s_requests; 
 
 }
