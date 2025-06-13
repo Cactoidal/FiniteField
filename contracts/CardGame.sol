@@ -46,6 +46,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         uint256 highBid;
         bool hasConcluded;
         address[TABLE_SIZE] players;
+        address[TABLE_SIZE] folded;
         uint256[TABLE_SIZE] scores;
         uint256[TABLE_SIZE] vrfSwapSeeds;
         bool[TABLE_SIZE] hasRequestedSwap;
@@ -66,9 +67,6 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
     // Player address > GameToken contract > playerStatus
     mapping (address => mapping(address => playerStatus)) public tokenPlayerStatus;
-
-    // Player cannot withdraw tokens during games
-    mapping (address => mapping(address => bool)) public withdrawLocked;
 
     mapping (uint256 => game) public gameSessions;
     uint256 public latestGameId = 1;
@@ -264,9 +262,6 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
             // Assign the player to the game
             player.playerIndex = i;
             player.gameId = latestGameId;
-
-            // Players cannot withdraw the gameToken during the duration of the game
-            withdrawLocked[playerAddress][gameToken] = true;
         }
 
         // Initialize the game state
@@ -321,13 +316,17 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
     // Only callable during the first 3 minutes of a game
     function fold(address gameToken) public {
-        // Check if the player is eligible to fold
-        playerStatus memory playerInfo = tokenPlayerStatus[msg.sender][gameToken];
-        uint gameId = playerInfo.gameId;
+        // Check if the player is eligible to fold.
+        playerStatus memory player = tokenPlayerStatus[msg.sender][gameToken];
+        uint gameId = player.gameId;
         if (gameId == 0) revert GameIDNotFound();
         if (!withinTimeLimit(gameId, TIME_LIMIT)) revert OutOfTime();
 
-        // Remove the player from the game
+        // Mark that the player has folded.
+        uint playerIndex = player.playerIndex;
+        gameSessions[gameId].folded[playerIndex] = msg.sender;
+
+        // Exit the game.
         clearPlayerStatus(gameId, msg.sender);
 
         emit Folded(msg.sender, gameId);
@@ -340,7 +339,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
     // Only callable during the first 2 minutes of the game
     function swapCards(address gameToken) public payable {
-        // Check if the player is eligible to swap cards
+        // Check if the player is eligible to swap cards.
         playerStatus memory player = tokenPlayerStatus[msg.sender][gameToken];
         uint gameId = player.gameId;
         if (gameId == 0) revert GameIDNotFound();
@@ -353,7 +352,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         if (session.hasRequestedSwap[playerIndex]) revert AlreadySwapped();
         session.hasRequestedSwap[playerIndex] = true;
 
-        // Check VRF fee
+        // Check VRF fee.
         uint estimate = IVRFWrapper(vrfWrapperAddress).estimateRequestPriceNative(
             callbackGasLimit, 
             1, 
@@ -380,7 +379,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     // Only callable during the first 3 minutes of the game
     function proveSwapCards(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[4] calldata _pubSignals) public {
         
-        // Check that the player is eligible to prove the swap
+        // Check that the player is eligible to prove the swap.
 
         address gameToken = address(uint160(_pubSignals[3]));
         playerStatus memory player = tokenPlayerStatus[msg.sender][gameToken];
@@ -399,7 +398,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         // Validate against old hand
         if (_pubSignals[0] != player.currentHand) revert InvalidHash();
 
-        // Validate vrf seed
+        // Validate VRF seed
         if (vrfSwapSeed != _pubSignals[2]) revert InvalidVRFSeed();
 
         // Update to new hand
@@ -441,6 +440,9 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         // Update the score array
         session.scores[playerIndex] = score;
 
+        // Exit the game
+        clearPlayerStatus(gameId, msg.sender);
+
         emit PlayedCards(msg.sender, gameId, cards);
     }
 
@@ -460,6 +462,8 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
         uint[TABLE_SIZE] memory scores = session.scores;
         address[TABLE_SIZE] memory players = session.players;
+        address[TABLE_SIZE] memory folded = session.folded;
+        uint256 highBid = session.highBid;
 
         address[] storage winners = gameSessions[gameId].winners;
 
@@ -473,9 +477,25 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         }
 
         // Get all winners (since ties are possible)
+        // Additionally, update the pot
          for (uint j = 0; j < TABLE_SIZE; j++) {
+            address player = players[j];
+
+            // If the player did not fold, make sure
+            // they have automatched the high bid. 
+            // It must be done in this step, otherwise players 
+            // could wait to see what other player reveal
+            // during the proving phase, and dodge paying
+            // the highBid if their hand isn't a winner.
+            if (folded[j] != player) {
+                uint256 diff =  highBid - tokenPlayerStatus[player][gameToken].totalBidAmount;
+                depositBalance[player][gameToken] -= diff;
+                session.totalPot += diff;
+            }
+            
+            // Get the winners
             if (scores[j] == highScore) {
-                winners.push(players[j]);
+                winners.push(player);
             }
         }
 
@@ -590,9 +610,6 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         playerStatus storage player = tokenPlayerStatus[playerAddress][gameToken];
         if (player.gameId != gameId) revert GameIDNotFound();
 
-        // Remove the player from the game session
-        gameSessions[gameId].players[player.playerIndex] = address(0);
-
         // Reset the player's state
         player.vrfSeed = 0;
         player.ante = 0;
@@ -601,15 +618,12 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         player.playerIndex = 0;
         player.totalBidAmount = 0;
         player.hasRequestedSeed = false;
-
-        // Allow withdrawals again
-        withdrawLocked[playerAddress][gameToken] = false;
-
     }
 
 
     //  TOKEN MANAGEMENT
 
+    // Player > Token > Amount
     mapping (address => mapping (address => uint256)) depositBalance;
 
     error NotGameToken();
@@ -633,7 +647,9 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     function withdrawGameToken(address tokenContract) public nonReentrant {
         if (!IWithdraw(tokenContract).isGameToken()) revert NotGameToken();
 
-        if (withdrawLocked[msg.sender][tokenContract]) revert CannotWithdrawDuringGame();
+        // Because games require players to have enough tokens to cover the maximumSpend,
+        // withdrawals are forbidden while the player is still in a game session.
+        if (tokenPlayerStatus[msg.sender][tokenContract].gameId != 0) revert CannotWithdrawDuringGame();
 
         uint256 balance = depositBalance[msg.sender][tokenContract];
         if (balance == 0) revert ZeroAmount();
