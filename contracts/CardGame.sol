@@ -24,7 +24,8 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     uint256 constant FIELD_MODULUS = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
 
     enum vrfRequestType {
-        CARDS,
+        NEW_HAND,
+        SWAP_CARDS,
         GAME_OBJECTIVE
     }
 
@@ -33,6 +34,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         address requester;
         address gameToken;
         uint256 gameId;
+        uint256 playerIndex;
     }
 
     struct game {
@@ -43,7 +45,9 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         uint256 totalPot;
         uint256 highBid;
         address[TABLE_SIZE] players;
+        address[] winners;
         uint256[TABLE_SIZE] scores;
+        uint256[TABLE_SIZE] vrfSwapSeeds;
         bool[TABLE_SIZE] hasRequestedSwap;
         bool hasConcluded;
     }
@@ -117,7 +121,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
         // Record the VRF callback arguments.
         vrfRequest storage request = pendingVRFRequest[requestId];
-        request.requestType = vrfRequestType.CARDS;
+        request.requestType = vrfRequestType.NEW_HAND;
         request.requester = playerAddress;
         request.gameToken = gameToken;
         
@@ -168,14 +172,24 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         uint256 vrfSeed = _randomWords[0];
         vrfRequestType requestType = pendingVRFRequest[_requestId].requestType;
 
-        if (requestType == vrfRequestType.CARDS) {
+        if (requestType == vrfRequestType.NEW_HAND) {
             vrfRequest memory request = pendingVRFRequest[_requestId];
             address playerAddress = request.requester;
             address gameToken = request.gameToken;
 
-            // The VRF seed for drawing cards has been recorded; the player 
+            // The VRF seed for drawing a new hand has been recorded; the player 
             // may now use it to generate a ZKP linked to a secret hand.
             tokenPlayerStatus[playerAddress][gameToken].vrfSeed = vrfSeed;
+        }
+
+        else if (requestType == vrfRequestType.SWAP_CARDS) {
+            vrfRequest memory request = pendingVRFRequest[_requestId];
+            uint256 gameId = request.gameId;
+            uint256 playerIndex = request.playerIndex;
+
+            // This VRF seed can be used to generate a ZKP linked to
+            // a new, modified secret hand.
+            gameSessions[gameId].vrfSwapSeeds[playerIndex] = vrfSeed;
         }
 
 
@@ -189,10 +203,8 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
             startingGame.startTimestamp = block.timestamp;
 
             emit GameStarted(gameId, vrfSeed);
-
         }
 
-        
         emit RequestFulfilled(
             _requestId,
             _randomWords,
@@ -327,14 +339,19 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     // and then validated on-chain as a public signal
 
     // Only callable during the first 2 minutes of the game
-    function swapCards(address gameToken) public {
+    function swapCards(address gameToken) public payable {
         // Check if the player is eligible to swap cards
-        playerStatus memory playerInfo = tokenPlayerStatus[msg.sender][gameToken];
-        uint gameId = playerInfo.gameId;
+        playerStatus memory player = tokenPlayerStatus[msg.sender][gameToken];
+        uint gameId = player.gameId;
         if (gameId == 0) revert GameIDNotFound();
         if (!withinTimeLimit(gameId, TIME_LIMIT - 60)) revert OutOfTime();
 
-        // more stuff
+        uint256 playerIndex = player.playerIndex;
+        game storage session = gameSessions[gameId];
+
+        // A player can only swap cards once per game.
+        if (session.hasRequestedSwap[playerIndex]) revert AlreadySwapped();
+        session.hasRequestedSwap[playerIndex] = true;
 
         // Check VRF fee
         uint estimate = IVRFWrapper(vrfWrapperAddress).estimateRequestPriceNative(
@@ -349,9 +366,9 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
         // Record the VRF callback arguments.
         vrfRequest storage request = pendingVRFRequest[requestId];
-        request.requestType = vrfRequestType.CARDS;
-        request.requester = msg.sender;
-        request.gameToken = gameToken; 
+        request.requestType = vrfRequestType.SWAP_CARDS;
+        request.gameId = gameId;
+        request.playerIndex = playerIndex;
 
         emit SwappingCards(msg.sender, gameId);
 
@@ -372,7 +389,10 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         if (gameId == 0) revert GameIDNotFound();
         if (!withinTimeLimit(gameId, TIME_LIMIT)) revert OutOfTime();
 
-        uint256 vrfSwapSeed = player.vrfSwapSeed;
+        // The player must request a VRF seed to swap cards.
+        uint256 vrfSwapSeed = gameSessions[gameId].vrfSwapSeeds[player.playerIndex];
+        if (vrfSwapSeed == 0) revert HaveNotSwapped();
+        
 
         // Validate vrf seed
 
@@ -417,11 +437,14 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         if (withinTimeLimit(gameId, END_LIMIT)) revert TooEarly();
         if (session.hasConcluded) revert GameAlreadyEnded();
 
-        uint[4] memory scores = session.scores;
-        address[4] memory players = session.players;
+        session.hasConcluded = true;
+
+        uint[TABLE_SIZE] memory scores = session.scores;
+        address[TABLE_SIZE] memory players = session.players;
+
+        address[] storage winners = gameSessions[gameId].winners;
 
         uint highScore = 0;
-        address[] memory winners;
         
         // Determine the high score
         for (uint i = 0; i < TABLE_SIZE; i++) {
@@ -433,11 +456,11 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         // Get all winners (since ties are possible)
          for (uint j = 0; j < TABLE_SIZE; j++) {
             if (scores[j] == highScore) {
-                winners.push_back(players[j]);
+                winners.push(players[j]);
             }
         }
 
-        uint winnerCount = winners.length;
+        uint winnerCount = session.winners.length;
         uint prizeAmount = session.totalPot / winnerCount;
 
         // highScore of 0 indicates all players folded
@@ -448,14 +471,11 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
             }
 
         }
-
-
       
         // add up bets for automatching players who haven't folded
         // clear player status for any players who have not folded/proved
         
-        session.hasConcluded = true;
-        
+    
         emit GameConcluded(winners, gameId, prizeAmount);
     }
 
@@ -551,6 +571,9 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         playerStatus storage player = tokenPlayerStatus[playerAddress][gameToken];
         if (player.gameId != gameId) revert GameIDNotFound();
 
+        // Remove the player from the game session
+        gameSessions[gameId].players[player.playerIndex] = address(0);
+
         // Reset the player's state
         player.vrfSeed = 0;
         player.ante = 0;
@@ -558,7 +581,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         player.gameId = 0;
         player.playerIndex = 0;
         player.totalBidAmount = 0;
-        player.hasRequestedSwap = false;
+        player.hasRequestedSeed = false;
 
         // Allow withdrawals again
         withdrawLocked[playerAddress][gameToken] = false;
@@ -616,7 +639,6 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     error InvalidZKP();
     error AlreadyRequestedSeed();
     error AlreadyHaveHand();
-    error AlreadySwapped();
     error NotInGame();
     error NotEnoughTimePassed();
     error DoesNotMatchHandHash();
@@ -633,6 +655,8 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     error TooEarly();
     error GameIDNotFound();
     error InvalidRaise();
+    error AlreadySwapped();
+    error HaveNotSwapped();
     error GameAlreadyEnded();
     
     error TransferFailed();
