@@ -83,19 +83,14 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     // SEPOLIA
     address vrfWrapperAddress = 0x195f15F2d49d693cE265b4fB0fdDbE15b1850Cc1;
 
-    // DEBUG (need the addresses)
-    address handZKPVerifier;
-    address swapZKPVerifier;
-    address playZKPVerifier;
+    address handZKPVerifier = 0xC54473C9035E406F49f4338C0d13c011c71F0A14;
+    address swapZKPVerifier = 0x76D4d96d853A89B738dEC79f030F1d2E262adDDE;
+    address playZKPVerifier = 0x0483e1189d5D8119E9Ed6cD15d1664a944100385;
 
-    constructor(address _handZKPVerifier, address _swapZKPVerifier, address _playZKPVerifier) 
+    constructor() 
         ConfirmedOwner(msg.sender)
         VRFV2PlusWrapperConsumerBase(vrfWrapperAddress)
-    {
-        handZKPVerifier = _handZKPVerifier;
-        swapZKPVerifier = _swapZKPVerifier;
-        playZKPVerifier = _playZKPVerifier;
-    }
+    {}
 
     function buyHandSeed(address playerAddress, address gameToken, uint256 ante) payable public nonReentrant {
         if (playerAddress == address(0)) revert ZeroAddress();
@@ -649,7 +644,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     //  TOKEN MANAGEMENT
 
     // Player > Token > Amount
-    mapping (address => mapping (address => uint256)) depositBalance;
+    mapping (address => mapping (address => uint256)) public depositBalance;
 
     error NotGameToken();
     error ZeroAddress();
@@ -662,7 +657,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         if (amount == 0) revert ZeroAmount();
         if (player == address(0)) revert ZeroAddress();
 
-        IERC20(tokenContract).transferFrom(tokenContract, player, amount);
+        IERC20(tokenContract).transferFrom(tokenContract, address(this), amount);
         depositBalance[player][tokenContract] += amount;
 
         emit Deposited(tokenContract, player, amount);
