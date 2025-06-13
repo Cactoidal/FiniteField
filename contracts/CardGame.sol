@@ -399,7 +399,8 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         if (_pubSignals[0] != player.currentHand) revert InvalidHash();
 
         // Validate VRF seed
-        if (vrfSwapSeed != _pubSignals[2]) revert InvalidVRFSeed();
+        // Must apply modulus for large numbers to validate correctly
+        if (vrfSwapSeed != _pubSignals[2] % FIELD_MODULUS) revert InvalidVRFSeed();
 
         // Update to new hand
         player.currentHand = _pubSignals[1];
@@ -479,23 +480,31 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         // Get all winners (since ties are possible)
         // Additionally, update the pot
          for (uint j = 0; j < TABLE_SIZE; j++) {
-            address player = players[j];
+            address playerAddress = players[j];
 
             // If the player did not fold, make sure
             // they have automatched the high bid. 
             // It must be done in this step, otherwise players 
-            // could wait to see what other player reveal
+            // could wait to see what other players reveal
             // during the proving phase, and dodge paying
             // the highBid if their hand isn't a winner.
-            if (folded[j] != player) {
-                uint256 diff =  highBid - tokenPlayerStatus[player][gameToken].totalBidAmount;
-                depositBalance[player][gameToken] -= diff;
+            if (folded[j] != playerAddress) {
+                playerStatus storage player = tokenPlayerStatus[playerAddress][gameToken];
+                uint256 diff =  highBid - player.totalBidAmount;
+                depositBalance[playerAddress][gameToken] -= diff;
                 session.totalPot += diff;
+
+                // Remove AFK players from the game.  Only players who have
+                // failed to fold or prove by this point would still have
+                // a gameId matching the game session Id.
+                if (player.gameId == gameId) {
+                    clearPlayerStatus(gameId, playerAddress);
+                }
             }
             
             // Get the winners
             if (scores[j] == highScore) {
-                winners.push(player);
+                winners.push(playerAddress);
             }
         }
 
@@ -510,11 +519,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
             }
 
         }
-      
-        // add up bets for automatching players who haven't folded
-        // clear player status for any players who have not folded/proved
-        
-    
+
         emit GameConcluded(winners, gameId, prizeAmount);
     }
 
