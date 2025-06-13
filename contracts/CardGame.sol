@@ -51,7 +51,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         uint256 highBid;
         bool hasConcluded;
         address[TABLE_SIZE] players;
-        address[TABLE_SIZE] folded;
+        address[TABLE_SIZE] exited;
         uint256[TABLE_SIZE] scores;
         uint256[TABLE_SIZE] vrfSwapSeeds;
         uint256[TABLE_SIZE] discardedCards;
@@ -332,24 +332,13 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         if (gameId == 0) revert GameIDNotFound();
         if (!withinTimeLimit(gameId, TIME_LIMIT)) revert OutOfTime();
 
-        // Mark that the player has folded.
-        uint playerIndex = player.playerIndex;
-        gameSessions[gameId].folded[playerIndex] = msg.sender;
-
         // Exit the game.
         clearPlayerStatus(gameId, msg.sender);
 
         emit Folded(msg.sender, gameId);
     }
 
-    // NOTE 
-    // DEBUG
-    // It could make sense to require a commitment here: a hash of the 
-    // two discarded cards, which will be used as an input to the ZKP
-    // and then validated on-chain as a public signal.  Right now,
-    // you are not obligated to prove the swap, meaning you have the choice
-    // to stick with your old hand if the new cards do not improve your score.
-
+   
     // Only callable during the first 2 minutes of the game
     function swapCards(address gameToken, uint256 discardedCardsHash) public payable {
         // Check if the player is eligible to swap cards.
@@ -365,8 +354,12 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         if (session.discardedCards[playerIndex] != 0) revert AlreadySwapped();
 
         if (discardedCardsHash == 0) revert InvalidDiscard();
-        // A hash of the discarded card indices is committed,
+        // A Poseidon hash of the discarded card indices is committed,
         // to be later validated against the ZKP's public output.
+
+        // DEBUG 
+        // NOTE
+        // Make sure the hash order is consistent
         session.discardedCards[playerIndex] = discardedCardsHash;
 
         // Check VRF fee.
@@ -456,6 +449,11 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         // Update the score array
         session.scores[playerIndex] = score;
 
+        // Match the high bid
+        uint256 diff =  session.highBid - player.totalBidAmount;
+        depositBalance[msg.sender][gameToken] -= diff;
+        session.totalPot += diff;
+
         // Exit the game
         clearPlayerStatus(gameId, msg.sender);
 
@@ -478,7 +476,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
         uint[TABLE_SIZE] memory scores = session.scores;
         address[TABLE_SIZE] memory players = session.players;
-        address[TABLE_SIZE] memory folded = session.folded;
+        address[TABLE_SIZE] memory exited = session.exited;
         uint256 highBid = session.highBid;
 
         address[] storage winners = gameSessions[gameId].winners;
@@ -497,19 +495,13 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
          for (uint j = 0; j < TABLE_SIZE; j++) {
             address playerAddress = players[j];
 
-            // If the player did not fold, make sure
+            // If the player did not prove or fold, make sure
             // they have automatched the high bid. 
             // It must be done in this step, otherwise players 
             // could wait to see what other players reveal
             // during the proving phase, and dodge paying
             // the highBid if their hand isn't a winner.
-
-            // DEBUG
-            // small problem; proving also exits the game, without debiting the player.
-            // So they must be assessed when they exit, not here.  This check is still
-            // necessary.  Simply change "folded" to "exited", and charge the player
-            // when they prove their hand
-            if (folded[j] != playerAddress) {
+            if (exited[j] != playerAddress) {
                 playerStatus storage player = tokenPlayerStatus[playerAddress][gameToken];
                 uint256 diff =  highBid - player.totalBidAmount;
                 depositBalance[playerAddress][gameToken] -= diff;
@@ -631,12 +623,17 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     function clearPlayerStatus(uint256 _gameId, address _playerAddress) internal {
         uint256 gameId = _gameId;
         address playerAddress = _playerAddress;
+        game storage session = gameSessions[gameId];
         address gameToken = gameSessions[gameId].gameToken;
-        if (gameToken == address(0)) revert GameIDNotFound();
+
+        if (session.gameToken == address(0)) revert GameIDNotFound();
         if (playerAddress == address(0)) revert ZeroAddress();
 
         playerStatus storage player = tokenPlayerStatus[playerAddress][gameToken];
         if (player.gameId != gameId) revert GameIDNotFound();
+
+        // Mark that the player has exited the game;
+        session.exited[player.playerIndex] = _playerAddress;
 
         // Reset the player's state
         player.vrfSeed = 0;
