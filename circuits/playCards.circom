@@ -11,6 +11,7 @@ template Play() {
 
     signal input nullifiers[handSize];
     signal input cards[handSize];
+    signal input gameToken;
 
     signal output handHash;
 
@@ -35,5 +36,5 @@ template Play() {
 
 }
 
-component main {public [cards]} = Play();
+component main {public [gameToken, cards]} = Play();
 

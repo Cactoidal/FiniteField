@@ -24,6 +24,7 @@ template Swap() {
 
     signal input vrfSeed;
     signal input fixedSeed;
+    signal input gameToken;
 
     signal input oldCards[handSize];
 
@@ -42,7 +43,7 @@ template Swap() {
     oldHandHash <== oldHandHasher.out;
 
     // fixedSeed must be in the set of allowed local seeds.
-    component inSetCheck = InSet(localSeedCount, [1, 3, 7, 9, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71]);
+    component inSetCheck = InSet(localSeedCount, [948321578921, 323846237643, 29478234787, 947289484324, 4827847813436, 98432542473237, 56324278238234, 77238476429378, 10927437265398, 32589475384735, 87834727625345, 7723645230273, 298467856729, 233652987328, 2389572388357, 23858923387534, 1242398565735, 6875282937855, 82984325902750, 48547252957635743]);
     inSetCheck.checkValue <== fixedSeed;
     inSetCheck.out === 1;
 
@@ -53,7 +54,7 @@ template Swap() {
     var seedHash = hasher.out;
 
     // Select new cards from the deck.
-    component prng = PRNGSelect(drawSize, deckSize, [1, 3, 7, 9, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71]);
+    component prng = PRNGSelect(drawSize, deckSize, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
     prng._seed <== seedHash;
     var selectedCards[drawSize] = prng.selected;
 
@@ -113,5 +114,5 @@ template Swap() {
 
 }
 
-component main {public [vrfSeed]} = Swap();
+component main {public [vrfSeed, gameToken]} = Swap();
 
