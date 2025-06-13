@@ -110,14 +110,14 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
         depositBalance[playerAddress][gameToken] -= ante;
         
-        uint estimate = IVRFWrapper(vrfWrapperAddress).estimateRequestPriceNative(
-            callbackGasLimit, 
-            1, 
-            tx.gasprice);
+        //uint estimate = IVRFWrapper(vrfWrapperAddress).estimateRequestPriceNative(
+        //    callbackGasLimit, 
+        //    1, 
+        //    tx.gasprice);
 
         // DEBUG
-        mostRecentEstimate = estimate;
-        if (msg.value < estimate) revert InsufficientFundsForVRF(); 
+        //mostRecentEstimate = estimate;
+        //if (msg.value < estimate) revert InsufficientFundsForVRF(); 
         
         // Call VRF.
         uint256 requestId = requestSeed();
@@ -129,8 +129,8 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         request.gameToken = gameToken;
         
         // Transfer any extra ETH back to the caller.
-        (bool success, ) = msg.sender.call{value: address(this).balance}("");
-        if (!success) revert TransferFailed();
+        //(bool success, ) = msg.sender.call{value: address(this).balance}("");
+        //if (!success) revert TransferFailed();
 
     }
 
