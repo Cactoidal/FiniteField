@@ -52,7 +52,9 @@ func _ready():
 	
 	# DEBUG
 	# Decode error messages by comparing them to keccak hashes of errors
-	# print(window.walletBridge.getFunctionSelector("InvalidZKP()"))
+	print(window.walletBridge.getFunctionSelector("OutOfTime()"))
+	
+	#0x7b7a7a87
 	
 
 
@@ -67,6 +69,12 @@ func connect_buttons():
 	
 	$MintAndDeposit.connect("pressed", mint_and_deposit)
 	$WithdrawETH.connect("pressed", withdraw_eth)
+	
+	$StartGame.connect("pressed", start_game)
+	$Raise.connect("pressed", raise)
+	$SwapCards.connect("pressed", swap_cards)
+	$Fold.connect("pressed", fold)
+	
 
 	EthersWeb.register_transaction_log(self, "receive_tx_receipt")
 
@@ -270,7 +278,7 @@ func load_bytes(path: String) -> PackedByteArray:
 
 
 # Game Logic
-var SEPOLIA_GAME_CONTRACT_ADDRESS = "0x21bAA027878Dcf111444F1586b72c0378C8ae0D3"
+var SEPOLIA_GAME_CONTRACT_ADDRESS = "0xBF2282CF0aAed8ac9A44787a33Ad9642c37e5a36"
 
 # Token
 var SEPOLIA_GAME_TOKEN_ADDRESS = "0x9acF3472557482091Fe76c2D08F82819Ab9a28eb"
@@ -283,6 +291,9 @@ var local_seeds = [948321578921, 323846237643, 29478234787, 947289484324, 482784
 var deck = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
 var hand_size = 5
 
+var ante = "100"
+var maximum_spend = "1000"
+
 
 
 func buy_seed():
@@ -290,7 +301,7 @@ func buy_seed():
 		print_log("Please connect your wallet")
 		return
 	
-	var calldata = EthersWeb.get_calldata(GAME_CONTRACT_ABI, "buyHandSeed", [connected_wallet, SEPOLIA_GAME_TOKEN_ADDRESS, "100"])
+	var calldata = EthersWeb.get_calldata(GAME_CONTRACT_ABI, "buyHandSeed", [connected_wallet, SEPOLIA_GAME_TOKEN_ADDRESS, ante])
 	
 	# Gas limit must be specified because ethers.js will underestimate
 	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_CONTRACT_ADDRESS, calldata, "0.002", "260000")
@@ -350,11 +361,9 @@ func get_hand_zk_proof():
 	# Selected from the set of local seeds, chosen because it generates
 	# the hand containing the most preferred cards
 	
-	# DEBUG
-	# Only works with the first seed in the set......
-	"fixedSeed": 948321578921,#get_random_local_seed(),
+	"fixedSeed": get_random_local_seed(),
 
-	"nullifiers": [44334434, 27842362, 27323373, 12312987, 73248927],#generate_nullifier_set(hand_size),
+	"nullifiers": generate_nullifier_set(hand_size),
 	
 	"gameToken": SEPOLIA_GAME_TOKEN_ADDRESS
   	}
@@ -475,8 +484,59 @@ func withdraw_eth():
 	
 	var calldata = EthersWeb.get_calldata(GAME_CONTRACT_ABI, "withdrawGameToken", [SEPOLIA_GAME_TOKEN_ADDRESS])
 	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_CONTRACT_ADDRESS, calldata)
+
+
+func start_game():
+	var params = [
+		SEPOLIA_GAME_TOKEN_ADDRESS,
+		ante,
+		maximum_spend,
+		# DEBUG
+		# [TABLE_SIZE] players, i.e. 4 players
+		[connected_wallet]
+	]
+	var calldata = EthersWeb.get_calldata(GAME_CONTRACT_ABI, "startGame", params)
+	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_CONTRACT_ADDRESS, calldata, "0.002", "380000")
+
+
+func raise():
+	# DEBUG
+	# player would pass their own amount here
+	var amount = "100"
+	var calldata = EthersWeb.get_calldata(GAME_CONTRACT_ABI, "raise", [SEPOLIA_GAME_TOKEN_ADDRESS, amount])
+	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_CONTRACT_ADDRESS, calldata)
+
+
+func fold():
+	var calldata = EthersWeb.get_calldata(GAME_CONTRACT_ABI, "fold", [SEPOLIA_GAME_TOKEN_ADDRESS])
+	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_CONTRACT_ADDRESS, calldata)
+
+
+func swap_cards():
+	# DEBUG
+	# player would pass their own indices here
+	var indices = [1, 2]
+	var nullifier = generate_nullifier_set(1)[0]
+	var poseidon_hash = poseidon([indices[0], indices[1], nullifier])
 	
+	var calldata = EthersWeb.get_calldata(GAME_CONTRACT_ABI, "swapCards", [SEPOLIA_GAME_TOKEN_ADDRESS, poseidon_hash])
+	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_CONTRACT_ADDRESS, calldata, "0.002", "260000")
+
+func prove_swap():
+	pass
+
+
+func prove_play_cards():
+	pass
+
+
+func conclude_game():
+	# DEBUG
+	# need to get the gameId 
+	var gameId = 1
 	
+	var calldata = EthersWeb.get_calldata(GAME_CONTRACT_ABI, "concludeGame", [gameId])
+	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_CONTRACT_ADDRESS, calldata)
 
 
 var GAME_CONTRACT_ABI = [
