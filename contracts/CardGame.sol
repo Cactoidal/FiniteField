@@ -295,6 +295,9 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         player.totalBidAmount += amount;
         depositBalance[msg.sender][gameToken] -= amount;
 
+        // Add to the pot
+        session.totalPot += amount;
+
         // Update the game state if new totalBidAmount exceeds previous high bid
         if (player.totalBidAmount > session.highBid) {
             session.highBid = player.totalBidAmount;
