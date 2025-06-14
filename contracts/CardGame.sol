@@ -13,7 +13,9 @@ import {IVRFWrapper} from "./interfaces/IVRFWrapper.sol";
 import {IWithdraw} from "./interfaces/IWithdraw.sol";
 import {IZKPVerifier} from "./interfaces/IZKPVerifier.sol";
 
-contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGuard {
+import {Groth16HandVerifier} from "./verifiers/HandVerify.sol";
+
+contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGuard, Groth16HandVerifier {
 
     // CONSTANTS
     uint8 constant TIME_LIMIT = 180;
@@ -81,7 +83,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     // SEPOLIA
     address vrfWrapperAddress = 0x195f15F2d49d693cE265b4fB0fdDbE15b1850Cc1;
 
-    address handZKPVerifier = 0x740ddB00d3932d3517908fec9E80DEAe14EE5F75;
+    address handZKPVerifier = 0x91459cc5b40132568e4E4374AF81c9f0914FD82c;
     address swapZKPVerifier = 0x2cAF9427bca572D57CBe12709691Dc03A4c215c8;
     address playZKPVerifier = 0xf30cA5e51b4352773201C3557CD4116e909cAB3F;
 
