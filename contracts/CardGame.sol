@@ -84,8 +84,8 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     address vrfWrapperAddress = 0x195f15F2d49d693cE265b4fB0fdDbE15b1850Cc1;
 
     address handZKPVerifier = 0x91459cc5b40132568e4E4374AF81c9f0914FD82c;
-    address swapZKPVerifier = 0x2cAF9427bca572D57CBe12709691Dc03A4c215c8;
-    address playZKPVerifier = 0xf30cA5e51b4352773201C3557CD4116e909cAB3F;
+    address swapZKPVerifier = 0xE1112B3297cB051850066b628fd56f3Ee689B157;
+    address playZKPVerifier = 0x363A4c6C96DB074c46311909AfB7d0F56c14972C;
 
     constructor() 
         ConfirmedOwner(msg.sender)
