@@ -36,5 +36,5 @@ template Play() {
 
 }
 
-component main {public [gameToken, cards]} = Play();
+component main {public [cards, gameToken]} = Play();
 
