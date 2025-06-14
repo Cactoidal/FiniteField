@@ -290,9 +290,12 @@ var ante = "100"
 var maximum_spend = "1000"
 
 var vrf_seed
-var hand_hash
+var vrf_swap_seed
+var hand 
 var discarded_cards
 var game_id = 5
+
+var player_info
 
 
 
@@ -358,6 +361,9 @@ func get_hand_zk_proof():
 	
 	"gameToken": SEPOLIA_GAME_TOKEN_ADDRESS
   	}
+	
+	# Cache the hand locally for later use
+	hand = generate_hand(inputs["vrfSeed"], inputs["fixedSeed"], inputs["nullifiers"])
 
 	# Must define public_types for the callback
 	var public_types  = [
@@ -429,10 +435,9 @@ func swap_cards():
 	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_CONTRACT_ADDRESS, calldata, "0.002", "260000")
 
 
-func prove_swap():
-	#To prove the swap, we need these inputs:
+#To prove the swap, we need these inputs:
 	# + The new VRF Swap Seed (vrfSeed)
-	# + A local seed (fixedSeed)
+	# + A new local seed (fixedSeed) - ideally optimized for the best score
 	# + SEPOLIA_GAME_TOKEN_ADDRESS (gameToken)
 	# + The 5 hashes of the old cards (oldCards)
 	# + The 2 indices to be swapped (indices)
@@ -445,25 +450,98 @@ func prove_swap():
 	# + uint256 (newHandHash)
 	# + uint256 (vrfSeed)
 	# + address (gameToken)
+func prove_swap():
+	# DEBUG
+	var vrf_swap_seed = 478274876#vrf_seed
+	var fixed_seed = get_random_local_seed()
+	var old_cards = [1,2,3,4,5]#hand["cards"]
+	var indices = [1,2]
+	var new_nullifiers = generate_nullifier_set(2)
+	var discard_nullifier = 4238742#discarded_cards["nullifier"]
 	
-	pass
+	var inputs = {
+		
+		"vrfSeed": vrf_swap_seed,
+		
+		"fixedSeed": fixed_seed,
+		
+		"gameToken": SEPOLIA_GAME_TOKEN_ADDRESS,
+		
+		"oldCards": old_cards,
+		
+		"indices": indices,
+		
+		"nullifiers": new_nullifiers,
+		
+		"discardNullifier": discard_nullifier
+	}
+	
+	var public_types  = [
+		["uint256"],
+		["uint256"],
+		["uint256"],
+		["uint256"],
+		["address"]
+	]
+	
+	calculateProof(
+		inputs, 
+		public_types, 
+		swapCards_zk_circuit, 
+		swapCards_zk_proving_key, 
+		window.swapCardsWitnessCalculator,
+		"proveSwapCards")
 
 
-func prove_play_cards():
-	#To prove, we need:
+#To prove, we need:
 	# + The 5 nullifiers (nullifiers)
 	# + The 5 cards (cards)
 	# + SEPOLIA_GAME_TOKEN_ADDRESS (gameToken)
 	
 	#The types of the public outputs are:
 	# + uint256 (handHash)
-	# + address (gameToken)
 	# + uint256 (cards[0])
 	# + uint256 (cards[1])
 	# + uint256 (cards[2])
 	# + uint256 (cards[3])
 	# + uint256 (cards[4])
-	pass
+	# + address (gameToken)
+func prove_play_cards():
+	# DEBUG
+	var nullifiers = generate_nullifier_set(5)#hand["nullifiers"]
+	var cards = [1,2,3,4,5]#hand["cards"]
+	
+	var inputs = {
+		
+		"nullifiers": nullifiers,
+		
+		"cards": cards,
+		
+		"gameToken": SEPOLIA_GAME_TOKEN_ADDRESS
+	}
+	
+	# DEBUG
+	# For some reason the address is coming in last,
+	# make sure this remains consistent
+	var public_types  = [
+		["uint256"],
+		["uint256"],
+		["uint256"],
+		["uint256"],
+		["uint256"],
+		["uint256"],
+		["address"]
+	]
+	
+	calculateProof(
+		inputs, 
+		public_types, 
+		playCards_zk_circuit, 
+		playCards_zk_proving_key, 
+		window.playCardsWitnessCalculator,
+		"provePlayCards")
+	
+	
 
 
 func conclude_game():
@@ -538,7 +616,14 @@ func generate_hand(_vrf_seed, fixed_seed, nullifiers):
 	
 	var hand_hash = poseidon(card_hashes)
 	
-	print_log(str(picked_cards))
+	var hand = {
+		"cards": picked_cards,
+		"nullifiers": nullifiers,
+		"card_hashes": card_hashes,
+		"hand_hash": hand_hash
+	}
+	
+	return hand
 
 
 func generate_nullifier_set(count):
@@ -559,8 +644,33 @@ func get_random_local_seed():
 	var local_seed = local_seeds[int(index)]
 	return local_seed
 	
+
+# From contract logic 
+func predict_score(obj_attractor, obj_color, cards):
+	var score = 0
+	for card in cards:
+		var card_color = 1
+		if card > 10:
+			card_color = 2
+			
+			card -= 10
+		
+		var diff = 0
+		
+		if card > obj_attractor:
+			diff = card - obj_attractor
+		elif card < obj_attractor:
+			diff = obj_attractor - card
+		
+		var color_bonus = 1
+		
+		if card_color == obj_color:
+			color_bonus = 2
+		
+		score += (10 - diff) * color_bonus
 	
-	
+	return score
+
 
 var GAME_CONTRACT_ABI = [
 	{
