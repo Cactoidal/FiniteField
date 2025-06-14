@@ -402,8 +402,12 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     // Only callable after the first 4 minutes, before 15 minutes have elapsed
     function provePlayCards(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[7] calldata _pubSignals) public {
         
+        // DEBUG
+        // Double check _pubSignals
+        // The order of signals may not be consistent with the circuit
+
         // Check that the player is eligible to reveal their cards
-        address gameToken = address(uint160(_pubSignals[1]));
+        address gameToken = address(uint160(_pubSignals[6]));
         playerStatus storage player = tokenPlayerStatus[msg.sender][gameToken];
         uint gameId = player.gameId;
         if (gameId == 0) revert GameIDNotFound();
@@ -421,7 +425,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         if (_pubSignals[0] != player.currentHand) revert InvalidHash();
         
         // Get the score
-        uint256[5] memory cards = [_pubSignals[2], _pubSignals[3], _pubSignals[4], _pubSignals[5], _pubSignals[6]];
+        uint256[5] memory cards = [_pubSignals[1], _pubSignals[2], _pubSignals[3], _pubSignals[4], _pubSignals[5]];
         uint256 score = scoreHand(session.objectiveSeed, cards);
         
         // Update the score array
@@ -621,6 +625,14 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         player.playerIndex = 0;
         player.totalBidAmount = 0;
         player.hasRequestedSeed = false;
+    }
+
+    function getVRFSwapSeed(address gameToken) public view returns(uint) {
+        playerStatus storage player = tokenPlayerStatus[msg.sender][gameToken];
+        uint gameId = player.gameId;
+        uint playerIndex = player.playerIndex;
+
+        return gameSessions[gameId].vrfSwapSeeds[playerIndex];
     }
 
 
