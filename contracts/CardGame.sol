@@ -103,7 +103,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
         // The ante is an upfront cost for a seed; the seed is only eligible for use in 
         // games with the same ante.
-        if (depositBalance[playerAddress][gameToken] > ante) revert InsufficientTokensForAnte();
+        if (depositBalance[playerAddress][gameToken] < ante) revert InsufficientTokensForAnte();
         
         player.hasRequestedSeed = true;
         player.ante = ante; 
@@ -129,8 +129,8 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         request.gameToken = gameToken;
         
         // Transfer any extra ETH back to the caller.
-        //(bool success, ) = msg.sender.call{value: address(this).balance}("");
-        //if (!success) revert TransferFailed();
+        (bool success, ) = msg.sender.call{value: address(this).balance}("");
+        if (!success) revert TransferFailed();
 
     }
 
@@ -744,7 +744,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     
 
     // VRF CONFIG
-    uint32 public callbackGasLimit = 100000;
+    uint32 public callbackGasLimit = 300000;
     uint16 public requestConfirmations = 3;
 
     struct RequestStatus {
