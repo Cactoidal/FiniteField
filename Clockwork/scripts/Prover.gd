@@ -22,13 +22,20 @@ var js_crypto_filepath = "res://js/js_crypto.js"
 # The Scalar Field size used by Circom.
 var FIELD_MODULUS = "21888242871839275222246405745257275088548364400416034343698204186575808495617"
 
+
 # To create proofs, 3 files are required:
 var handDraw_zk_circuit = "res://zk/handDraw.wasm"
 var handDraw_zk_proving_key = "res://zk/handDraw_final.zkey"
 # Accessed at window.handDrawWitnessCalculator
-var hand_witness_calculator_filepath = "res://js/handDraw_witness_calculator.js"
+var handDraw_witness_calculator_filepath = "res://js/handDraw_witness_calculator.js"
 
+var swapCards_zk_circuit = "res://zk/swapCards.wasm"
+var swapCards_zk_proving_key = "res://zk/swapCards_final.zkey"
+var swapCards_witness_calculator_filepath = "res://js/swapCards_witness_calculator.js"
 
+var playCards_zk_circuit = "res://zk/playCards.wasm"
+var playCards_zk_proving_key = "res://zk/playCards_final.zkey"
+var playCards_witness_calculator_filepath = "res://js/playCards_witness_calculator.js"
 
 func _ready():
 	connect_buttons()
@@ -36,11 +43,16 @@ func _ready():
 	
 	# witness_calculator.js files need to be attached to the
 	# window using a wrapper (see below) and later passed as an object
-	load_and_attach(hand_witness_calculator_filepath, "handDrawWitnessCalculator")
+	load_and_attach(handDraw_witness_calculator_filepath, "handDrawWitnessCalculator")
+	load_and_attach(swapCards_witness_calculator_filepath, "swapCardsWitnessCalculator")
+	load_and_attach(playCards_witness_calculator_filepath, "playCardsWitnessCalculator")
+	
 	load_and_attach(js_crypto_filepath)
 	load_and_attach(zk_bridge_filepath)
-	for seed in range(100):
-		get_random_local_seed()
+	
+	# DEBUG
+	# Decode error messages by comparing them to keccak hashes of errors
+	# print(window.walletBridge.getFunctionSelector("InvalidZKP()"))
 	
 
 
@@ -52,6 +64,9 @@ func connect_buttons():
 	
 	$BuySeed.connect("pressed", buy_seed)
 	$CalculateHands.connect("pressed", get_vrf_seed)
+	
+	$MintAndDeposit.connect("pressed", mint_and_deposit)
+	$WithdrawETH.connect("pressed", withdraw_eth)
 
 	EthersWeb.register_transaction_log(self, "receive_tx_receipt")
 
@@ -88,7 +103,7 @@ func show_wallet_info(callback):
 
 
 func receive_tx_receipt(tx_receipt):
-
+	
 	var tx_hash = tx_receipt["hash"]
 	var status = str(tx_receipt["status"])
 	
@@ -254,11 +269,17 @@ func load_bytes(path: String) -> PackedByteArray:
 ### GAME
 
 
-var SEPOLIA_GAME_CONTRACT_ADDRESS = "0xB7A5A226f19CDD52958572B75Ec427995B215466"
+# Game Logic
+var SEPOLIA_GAME_CONTRACT_ADDRESS = "0x21bAA027878Dcf111444F1586b72c0378C8ae0D3"
+
+# Token
+var SEPOLIA_GAME_TOKEN_ADDRESS = "0x9acF3472557482091Fe76c2D08F82819Ab9a28eb"
+
 var vrf_seed
 var hand_hash
 
-var local_seeds = [1, 3, 7, 9, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71]
+var local_seeds = [948321578921, 323846237643, 29478234787, 947289484324, 4827847813436, 98432542473237, 56324278238234, 77238476429378, 10927437265398, 32589475384735, 87834727625345, 7723645230273, 298467856729, 233652987328, 2389572388357, 23858923387534, 1242398565735, 6875282937855, 82984325902750, 48547252957635743]
+
 var deck = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
 var hand_size = 5
 
@@ -268,11 +289,11 @@ func buy_seed():
 	if !connected_wallet:
 		print_log("Please connect your wallet")
 		return
-		
-	var calldata = EthersWeb.get_calldata(GAME_CONTRACT, "buyHandSeed", [connected_wallet])
+	
+	var calldata = EthersWeb.get_calldata(GAME_CONTRACT_ABI, "buyHandSeed", [connected_wallet, SEPOLIA_GAME_TOKEN_ADDRESS, "100"])
 	
 	# Gas limit must be specified because ethers.js will underestimate
-	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_CONTRACT_ADDRESS, calldata, "0.001", "220000")
+	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_CONTRACT_ADDRESS, calldata, "0.002", "260000")
 
 
 
@@ -280,7 +301,7 @@ func get_vrf_seed():
 	
 	var callback = EthersWeb.create_callback(self, "got_vrf_seed")
 
-	var data = EthersWeb.get_calldata(GAME_CONTRACT, "currentSeed", [connected_wallet]) 
+	var data = EthersWeb.get_calldata(GAME_CONTRACT_ABI, "tokenPlayerStatus", [connected_wallet, SEPOLIA_GAME_TOKEN_ADDRESS]) 
 	
 	EthersWeb.read_from_contract(
 		"Ethereum Sepolia",
@@ -295,7 +316,9 @@ func got_vrf_seed(callback):
 	
 	vrf_seed = callback["result"][0]
 	print_log("VRF Seed: " + vrf_seed)
-	calculate_hands()
+	
+	# DEBUG
+	#calculate_hands()
 
 
 func calculate_hands():
@@ -326,18 +349,21 @@ func get_hand_zk_proof():
 	
 	# Selected from the set of local seeds, chosen because it generates
 	# the hand containing the most preferred cards
-	"fixedSeed": get_random_local_seed(),
-	#"fixedSeed": 11,
 	
-	# Large, randomized nullifiers will work
-	"nullifiers": generate_nullifier_set(hand_size)
-	#"nullifiers": [poseidon([44334434]), poseidon([27842362]), poseidon([27323373]), poseidon([12312987]), poseidon([73248927])]
+	# DEBUG
+	# Only works with the first seed in the set......
+	"fixedSeed": 948321578921,#get_random_local_seed(),
+
+	"nullifiers": [44334434, 27842362, 27323373, 12312987, 73248927],#generate_nullifier_set(hand_size),
+	
+	"gameToken": SEPOLIA_GAME_TOKEN_ADDRESS
   	}
-	
+
 	# Must define public_types for the callback
 	var public_types  = [
 		["uint256"],
-		["uint256"]
+		["uint256"],
+		["address"]
 	]
 	
 	#var callback = EthersWeb.create_callback(self, "get_proof_calldata", {"public_types": public_types})
@@ -432,10 +458,148 @@ func test_hand():
 
 
 
+func mint_and_deposit():
+	if !connected_wallet:
+		print_log("Please connect your wallet")
+		return
+		
+	var deposit_contract = SEPOLIA_GAME_CONTRACT_ADDRESS
+	var calldata = EthersWeb.get_calldata(GAME_TOKEN_ABI, "mintAndDeposit", [connected_wallet, deposit_contract])
+	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_TOKEN_ADDRESS, calldata, "0.0001", "220000")
 
 
+func withdraw_eth():
+	if !connected_wallet:
+		print_log("Please connect your wallet")
+		return
+	
+	var calldata = EthersWeb.get_calldata(GAME_CONTRACT_ABI, "withdrawGameToken", [SEPOLIA_GAME_TOKEN_ADDRESS])
+	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_CONTRACT_ADDRESS, calldata)
+	
+	
 
-var GAME_CONTRACT = [
+
+var GAME_CONTRACT_ABI = [
+	{
+		"inputs": [],
+		"stateMutability": "nonpayable",
+		"type": "constructor"
+	},
+	{
+		"inputs": [],
+		"name": "AlreadyHaveHand",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "AlreadyRequestedSeed",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "AlreadySubmittedScore",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "AlreadySwapped",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "AnteDoesNotMatch",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "CannotWithdrawDuringGame",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "DoesNotMatchHandHash",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "GameAlreadyEnded",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "GameHasNotStarted",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "GameIDNotFound",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "HaveNotSwapped",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "InsufficientFundsForVRF",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "InsufficientTokensForAnte",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "InvalidDiscard",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "InvalidHash",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "InvalidMaximumSpend",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "InvalidPlayerCount",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "InvalidRaise",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "InvalidVRFSeed",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "InvalidZKP",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "NotEnoughTimePassed",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "NotGameToken",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "NotInGame",
+		"type": "error"
+	},
 	{
 		"inputs": [
 			{
@@ -451,6 +615,134 @@ var GAME_CONTRACT = [
 		],
 		"name": "OnlyVRFWrapperCanFulfill",
 		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "OutOfTime",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "PlayerAlreadyInGame",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "PlayerLacksHand",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "PlayerLacksTokens",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "TooEarly",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "TransferFailed",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "ZeroAddress",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "ZeroAmount",
+		"type": "error"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "tokenContract",
+				"type": "address"
+			},
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "recipient",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "amount",
+				"type": "uint256"
+			}
+		],
+		"name": "Deposited",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": false,
+				"internalType": "address",
+				"name": "player",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "gameId",
+				"type": "uint256"
+			}
+		],
+		"name": "Folded",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": false,
+				"internalType": "address[]",
+				"name": "winners",
+				"type": "address[]"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "gameId",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "prize",
+				"type": "uint256"
+			}
+		],
+		"name": "GameConcluded",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "gameId",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "objectiveVRFSeed",
+				"type": "uint256"
+			}
+		],
+		"name": "GameStarted",
+		"type": "event"
 	},
 	{
 		"anonymous": false,
@@ -488,6 +780,106 @@ var GAME_CONTRACT = [
 			}
 		],
 		"name": "OwnershipTransferred",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": false,
+				"internalType": "address",
+				"name": "player",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "gameId",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256[5]",
+				"name": "cards",
+				"type": "uint256[5]"
+			}
+		],
+		"name": "PlayedCards",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": false,
+				"internalType": "address",
+				"name": "player",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "handHash",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "playerVRFSeed",
+				"type": "uint256"
+			}
+		],
+		"name": "ProvedHand",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": false,
+				"internalType": "address",
+				"name": "player",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "gameId",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "playerVRFSeed",
+				"type": "uint256"
+			}
+		],
+		"name": "ProvedSwap",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": false,
+				"internalType": "address",
+				"name": "player",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "gameId",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "amount",
+				"type": "uint256"
+			}
+		],
+		"name": "Raised",
 		"type": "event"
 	},
 	{
@@ -554,6 +946,57 @@ var GAME_CONTRACT = [
 		"type": "event"
 	},
 	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "gameId",
+				"type": "uint256"
+			}
+		],
+		"name": "StartingNewGame",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": false,
+				"internalType": "address",
+				"name": "player",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "gameId",
+				"type": "uint256"
+			}
+		],
+		"name": "SwappingCards",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "amount",
+				"type": "uint256"
+			}
+		],
+		"name": "Withdrawn",
+		"type": "event"
+	},
+	{
 		"inputs": [],
 		"name": "acceptOwnership",
 		"outputs": [],
@@ -564,102 +1007,24 @@ var GAME_CONTRACT = [
 		"inputs": [
 			{
 				"internalType": "address",
-				"name": "player",
+				"name": "playerAddress",
 				"type": "address"
+			},
+			{
+				"internalType": "address",
+				"name": "gameToken",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "ante",
+				"type": "uint256"
 			}
 		],
 		"name": "buyHandSeed",
 		"outputs": [],
 		"stateMutability": "payable",
 		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "uint256[2]",
-				"name": "_pA",
-				"type": "uint256[2]"
-			},
-			{
-				"internalType": "uint256[2][2]",
-				"name": "_pB",
-				"type": "uint256[2][2]"
-			},
-			{
-				"internalType": "uint256[2]",
-				"name": "_pC",
-				"type": "uint256[2]"
-			},
-			{
-				"internalType": "uint256[2]",
-				"name": "_pubSignals",
-				"type": "uint256[2]"
-			}
-		],
-		"name": "proveHand",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "uint256",
-				"name": "_requestId",
-				"type": "uint256"
-			},
-			{
-				"internalType": "uint256[]",
-				"name": "_randomWords",
-				"type": "uint256[]"
-			}
-		],
-		"name": "rawFulfillRandomWords",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "to",
-				"type": "address"
-			}
-		],
-		"name": "transferOwnership",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"stateMutability": "payable",
-		"type": "receive"
-	},
-	{
-		"inputs": [],
-		"name": "withdrawLink",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "uint256",
-				"name": "amount",
-				"type": "uint256"
-			}
-		],
-		"name": "withdrawNative",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"stateMutability": "nonpayable",
-		"type": "constructor"
 	},
 	{
 		"inputs": [],
@@ -677,12 +1042,30 @@ var GAME_CONTRACT = [
 	{
 		"inputs": [
 			{
+				"internalType": "uint256",
+				"name": "gameId",
+				"type": "uint256"
+			}
+		],
+		"name": "concludeGame",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			},
+			{
 				"internalType": "address",
 				"name": "",
 				"type": "address"
 			}
 		],
-		"name": "currentHand",
+		"name": "depositBalance",
 		"outputs": [
 			{
 				"internalType": "uint256",
@@ -697,29 +1080,82 @@ var GAME_CONTRACT = [
 		"inputs": [
 			{
 				"internalType": "address",
-				"name": "",
+				"name": "tokenContract",
 				"type": "address"
-			}
-		],
-		"name": "currentSeed",
-		"outputs": [
+			},
+			{
+				"internalType": "address",
+				"name": "player",
+				"type": "address"
+			},
 			{
 				"internalType": "uint256",
-				"name": "",
+				"name": "amount",
 				"type": "uint256"
 			}
 		],
-		"stateMutability": "view",
+		"name": "depositGameToken",
+		"outputs": [],
+		"stateMutability": "nonpayable",
 		"type": "function"
 	},
 	{
-		"inputs": [],
-		"name": "ENTRY_PRICE",
-		"outputs": [
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "gameToken",
+				"type": "address"
+			}
+		],
+		"name": "fold",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
 			{
 				"internalType": "uint256",
 				"name": "",
 				"type": "uint256"
+			}
+		],
+		"name": "gameSessions",
+		"outputs": [
+			{
+				"internalType": "address",
+				"name": "gameToken",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "startTimestamp",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "objectiveSeed",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "maximumSpend",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "totalPot",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "highBid",
+				"type": "uint256"
+			},
+			{
+				"internalType": "bool",
+				"name": "hasConcluded",
+				"type": "bool"
 			}
 		],
 		"stateMutability": "view",
@@ -755,48 +1191,24 @@ var GAME_CONTRACT = [
 		"inputs": [
 			{
 				"internalType": "uint256",
-				"name": "_requestId",
+				"name": "vrfSeed",
 				"type": "uint256"
 			}
 		],
-		"name": "getRequestStatus",
+		"name": "getObjective",
 		"outputs": [
 			{
 				"internalType": "uint256",
-				"name": "paid",
+				"name": "",
 				"type": "uint256"
 			},
-			{
-				"internalType": "bool",
-				"name": "fulfilled",
-				"type": "bool"
-			},
-			{
-				"internalType": "uint256[]",
-				"name": "randomWords",
-				"type": "uint256[]"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "",
-				"type": "address"
-			}
-		],
-		"name": "governancePower",
-		"outputs": [
 			{
 				"internalType": "uint256",
 				"name": "",
 				"type": "uint256"
 			}
 		],
-		"stateMutability": "view",
+		"stateMutability": "pure",
 		"type": "function"
 	},
 	{
@@ -814,12 +1226,12 @@ var GAME_CONTRACT = [
 	},
 	{
 		"inputs": [],
-		"name": "linkAddress",
+		"name": "latestGameId",
 		"outputs": [
 			{
-				"internalType": "address",
+				"internalType": "uint256",
 				"name": "",
-				"type": "address"
+				"type": "uint256"
 			}
 		],
 		"stateMutability": "view",
@@ -839,13 +1251,39 @@ var GAME_CONTRACT = [
 		"type": "function"
 	},
 	{
-		"inputs": [],
-		"name": "requestConfirmations",
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"name": "pendingVRFRequest",
 		"outputs": [
 			{
-				"internalType": "uint16",
-				"name": "",
-				"type": "uint16"
+				"internalType": "enum CardGame.vrfRequestType",
+				"name": "requestType",
+				"type": "uint8"
+			},
+			{
+				"internalType": "address",
+				"name": "requester",
+				"type": "address"
+			},
+			{
+				"internalType": "address",
+				"name": "gameToken",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "gameId",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "playerIndex",
+				"type": "uint256"
 			}
 		],
 		"stateMutability": "view",
@@ -854,17 +1292,131 @@ var GAME_CONTRACT = [
 	{
 		"inputs": [
 			{
-				"internalType": "address",
-				"name": "",
-				"type": "address"
+				"internalType": "uint256[2]",
+				"name": "_pA",
+				"type": "uint256[2]"
+			},
+			{
+				"internalType": "uint256[2][2]",
+				"name": "_pB",
+				"type": "uint256[2][2]"
+			},
+			{
+				"internalType": "uint256[2]",
+				"name": "_pC",
+				"type": "uint256[2]"
+			},
+			{
+				"internalType": "uint256[3]",
+				"name": "_pubSignals",
+				"type": "uint256[3]"
 			}
 		],
-		"name": "requestedSeed",
+		"name": "proveHand",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256[2]",
+				"name": "_pA",
+				"type": "uint256[2]"
+			},
+			{
+				"internalType": "uint256[2][2]",
+				"name": "_pB",
+				"type": "uint256[2][2]"
+			},
+			{
+				"internalType": "uint256[2]",
+				"name": "_pC",
+				"type": "uint256[2]"
+			},
+			{
+				"internalType": "uint256[7]",
+				"name": "_pubSignals",
+				"type": "uint256[7]"
+			}
+		],
+		"name": "provePlayCards",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256[2]",
+				"name": "_pA",
+				"type": "uint256[2]"
+			},
+			{
+				"internalType": "uint256[2][2]",
+				"name": "_pB",
+				"type": "uint256[2][2]"
+			},
+			{
+				"internalType": "uint256[2]",
+				"name": "_pC",
+				"type": "uint256[2]"
+			},
+			{
+				"internalType": "uint256[5]",
+				"name": "_pubSignals",
+				"type": "uint256[5]"
+			}
+		],
+		"name": "proveSwapCards",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "gameToken",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "amount",
+				"type": "uint256"
+			}
+		],
+		"name": "raise",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "_requestId",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256[]",
+				"name": "_randomWords",
+				"type": "uint256[]"
+			}
+		],
+		"name": "rawFulfillRandomWords",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "requestConfirmations",
 		"outputs": [
 			{
-				"internalType": "bool",
+				"internalType": "uint16",
 				"name": "",
-				"type": "bool"
+				"type": "uint16"
 			}
 		],
 		"stateMutability": "view",
@@ -898,16 +1450,121 @@ var GAME_CONTRACT = [
 		"inputs": [
 			{
 				"internalType": "uint256",
+				"name": "vrfSeed",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256[5]",
+				"name": "cards",
+				"type": "uint256[5]"
+			}
+		],
+		"name": "scoreHand",
+		"outputs": [
+			{
+				"internalType": "uint256",
 				"name": "",
 				"type": "uint256"
 			}
 		],
-		"name": "seedRequest",
-		"outputs": [
+		"stateMutability": "pure",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "_gameToken",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "_ante",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "_maximumSpend",
+				"type": "uint256"
+			},
+			{
+				"internalType": "address[1]",
+				"name": "players",
+				"type": "address[1]"
+			}
+		],
+		"name": "startGame",
+		"outputs": [],
+		"stateMutability": "payable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "gameToken",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "discardedCardsHash",
+				"type": "uint256"
+			}
+		],
+		"name": "swapCards",
+		"outputs": [],
+		"stateMutability": "payable",
+		"type": "function"
+	},
+	{
+		"inputs": [
 			{
 				"internalType": "address",
 				"name": "",
 				"type": "address"
+			},
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"name": "tokenPlayerStatus",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "vrfSeed",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "ante",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "currentHand",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "gameId",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "playerIndex",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "totalBidAmount",
+				"type": "uint256"
+			},
+			{
+				"internalType": "bool",
+				"name": "hasRequestedSeed",
+				"type": "bool"
 			}
 		],
 		"stateMutability": "view",
@@ -916,27 +1573,43 @@ var GAME_CONTRACT = [
 	{
 		"inputs": [
 			{
-				"internalType": "uint256[2]",
-				"name": "_pA",
-				"type": "uint256[2]"
-			},
-			{
-				"internalType": "uint256[2][2]",
-				"name": "_pB",
-				"type": "uint256[2][2]"
-			},
-			{
-				"internalType": "uint256[2]",
-				"name": "_pC",
-				"type": "uint256[2]"
-			},
-			{
-				"internalType": "uint256[2]",
-				"name": "_pubSignals",
-				"type": "uint256[2]"
+				"internalType": "address",
+				"name": "to",
+				"type": "address"
 			}
 		],
-		"name": "verifyProof",
+		"name": "transferOwnership",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "tokenContract",
+				"type": "address"
+			}
+		],
+		"name": "withdrawGameToken",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "gameId",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "limit",
+				"type": "uint256"
+			}
+		],
+		"name": "withinTimeLimit",
 		"outputs": [
 			{
 				"internalType": "bool",
@@ -948,16 +1621,439 @@ var GAME_CONTRACT = [
 		"type": "function"
 	},
 	{
+		"stateMutability": "payable",
+		"type": "receive"
+	}
+]
+
+
+## STARMARK
+
+
+var GAME_TOKEN_ABI = [
+	{
 		"inputs": [],
-		"name": "wrapperAddress",
-		"outputs": [
+		"stateMutability": "nonpayable",
+		"type": "constructor"
+	},
+	{
+		"inputs": [
 			{
 				"internalType": "address",
-				"name": "",
+				"name": "spender",
 				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "allowance",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "needed",
+				"type": "uint256"
+			}
+		],
+		"name": "ERC20InsufficientAllowance",
+		"type": "error"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "sender",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "balance",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "needed",
+				"type": "uint256"
+			}
+		],
+		"name": "ERC20InsufficientBalance",
+		"type": "error"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "approver",
+				"type": "address"
+			}
+		],
+		"name": "ERC20InvalidApprover",
+		"type": "error"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "receiver",
+				"type": "address"
+			}
+		],
+		"name": "ERC20InvalidReceiver",
+		"type": "error"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "sender",
+				"type": "address"
+			}
+		],
+		"name": "ERC20InvalidSender",
+		"type": "error"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "spender",
+				"type": "address"
+			}
+		],
+		"name": "ERC20InvalidSpender",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "TransferFailed",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "ZeroAddress",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "ZeroAmount",
+		"type": "error"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "owner",
+				"type": "address"
+			},
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "spender",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "value",
+				"type": "uint256"
+			}
+		],
+		"name": "Approval",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "depositContract",
+				"type": "address"
+			},
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "recipient",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "amount",
+				"type": "uint256"
+			}
+		],
+		"name": "Deposited",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "from",
+				"type": "address"
+			},
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "to",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "value",
+				"type": "uint256"
+			}
+		],
+		"name": "Transfer",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "amount",
+				"type": "uint256"
+			}
+		],
+		"name": "Withdrawn",
+		"type": "event"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "owner",
+				"type": "address"
+			},
+			{
+				"internalType": "address",
+				"name": "spender",
+				"type": "address"
+			}
+		],
+		"name": "allowance",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
 			}
 		],
 		"stateMutability": "view",
 		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "spender",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "value",
+				"type": "uint256"
+			}
+		],
+		"name": "approve",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "account",
+				"type": "address"
+			}
+		],
+		"name": "balanceOf",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "amount",
+				"type": "uint256"
+			},
+			{
+				"internalType": "address",
+				"name": "recipient",
+				"type": "address"
+			}
+		],
+		"name": "burnAndWithdraw",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "decimals",
+		"outputs": [
+			{
+				"internalType": "uint8",
+				"name": "",
+				"type": "uint8"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "isGameToken",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "pure",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "recipient",
+				"type": "address"
+			},
+			{
+				"internalType": "address",
+				"name": "depositContract",
+				"type": "address"
+			}
+		],
+		"name": "mintAndDeposit",
+		"outputs": [],
+		"stateMutability": "payable",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "name",
+		"outputs": [
+			{
+				"internalType": "string",
+				"name": "",
+				"type": "string"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "symbol",
+		"outputs": [
+			{
+				"internalType": "string",
+				"name": "",
+				"type": "string"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "totalSupply",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "to",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "value",
+				"type": "uint256"
+			}
+		],
+		"name": "transfer",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "from",
+				"type": "address"
+			},
+			{
+				"internalType": "address",
+				"name": "to",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "value",
+				"type": "uint256"
+			}
+		],
+		"name": "transferFrom",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"stateMutability": "payable",
+		"type": "receive"
 	}
 ]

@@ -52,18 +52,36 @@ text = "Get Proof"
 [node name="BuySeed" type="Button" parent="."]
 layout_mode = 0
 offset_left = 45.0
-offset_top = 295.0
+offset_top = 454.0
 offset_right = 227.0
-offset_bottom = 349.0
+offset_bottom = 508.0
 mouse_default_cursor_shape = 2
 text = "Buy Seed"
+
+[node name="MintAndDeposit" type="Button" parent="."]
+layout_mode = 0
+offset_left = 45.0
+offset_top = 271.0
+offset_right = 227.0
+offset_bottom = 325.0
+mouse_default_cursor_shape = 2
+text = "Mint And Deposit"
+
+[node name="WithdrawETH" type="Button" parent="."]
+layout_mode = 0
+offset_left = 45.0
+offset_top = 343.0
+offset_right = 227.0
+offset_bottom = 397.0
+mouse_default_cursor_shape = 2
+text = "Withdraw ETH"
 
 [node name="CalculateHands" type="Button" parent="."]
 layout_mode = 0
 offset_left = 45.0
-offset_top = 367.0
+offset_top = 526.0
 offset_right = 227.0
-offset_bottom = 421.0
+offset_bottom = 580.0
 mouse_default_cursor_shape = 2
 text = "Get Seed & Hands"
 

@@ -292,9 +292,9 @@ window.walletBridge = {
     try {
       console.log(calldata)
 
-
+      var tx;
       if (gasLimitOverride) {
-        const tx = await signer.sendTransaction({
+          tx = await signer.sendTransaction({
           to: contract_address,
           data: calldata,
           gasLimit: gasLimitOverride,
@@ -303,7 +303,7 @@ window.walletBridge = {
       }
 
       else {
-        const tx = await signer.sendTransaction({
+          tx = await signer.sendTransaction({
           to: contract_address,
           data: calldata,
           value: valueEth ? window.ethers.parseEther(valueEth) : 0
