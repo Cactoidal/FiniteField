@@ -18,7 +18,7 @@ import {Groth16HandVerifier} from "./verifiers/HandVerify.sol";
 contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGuard, Groth16HandVerifier {
 
     // CONSTANTS
-    uint8 constant TIME_LIMIT = 180;
+    uint8 constant TIME_LIMIT = 240;
     uint16 constant END_LIMIT = 900;
     
     // DEBUG
@@ -278,7 +278,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     }
 
 
-    // Only callable during the first 3 minutes of a game
+    // Only callable during the first 4 minutes of a game
     function raise(address gameToken, uint amount) public nonReentrant {
         // Check if player is eligible to raise
         playerStatus storage player = tokenPlayerStatus[msg.sender][gameToken];
@@ -303,7 +303,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         emit Raised(msg.sender, gameId, amount);
     }
 
-    // Only callable during the first 3 minutes of a game
+    // Only callable during the first 4 minutes of a game
     function fold(address gameToken) public {
         // Check if the player is eligible to fold.
         playerStatus storage player = tokenPlayerStatus[msg.sender][gameToken];
@@ -324,7 +324,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         playerStatus storage player = tokenPlayerStatus[msg.sender][gameToken];
         uint gameId = player.gameId;
         if (gameId == 0) revert GameIDNotFound();
-        if (!withinTimeLimit(gameId, TIME_LIMIT - 60)) revert OutOfTime();
+        if (!withinTimeLimit(gameId, TIME_LIMIT - 120)) revert OutOfTime();
 
         uint256 playerIndex = player.playerIndex;
         game storage session = gameSessions[gameId];
@@ -355,7 +355,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     }
 
 
-    // Only callable during the first 3 minutes of the game
+    // Only callable during the first 4 minutes of the game
     function proveSwapCards(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[5] calldata _pubSignals) public {
         
         // Check that the player is eligible to prove the swap.
@@ -392,7 +392,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     
 
 
-    // Only callable after the first 3 minutes, before 15 minutes have elapsed
+    // Only callable after the first 4 minutes, before 15 minutes have elapsed
     function provePlayCards(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[7] calldata _pubSignals) public {
         
         // Check that the player is eligible to reveal their cards
