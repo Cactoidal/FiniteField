@@ -353,6 +353,10 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         request.gameId = gameId;
         request.playerIndex = playerIndex;
 
+        // Transfer any extra ETH back to the caller.
+        (bool success, ) = msg.sender.call{value: address(this).balance}("");
+        if (!success) revert TransferFailed();
+
         emit SwappingCards(msg.sender, gameId);
 
     }
