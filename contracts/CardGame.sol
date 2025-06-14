@@ -76,16 +76,14 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     mapping (uint256 => game) public gameSessions;
     uint256 public latestGameId = 1;
 
-    // DEBUG
-    uint mostRecentEstimate;
 
     // CONSTRUCTOR ADDRESSES
     // SEPOLIA
     address vrfWrapperAddress = 0x195f15F2d49d693cE265b4fB0fdDbE15b1850Cc1;
 
-    address handZKPVerifier = 0xC54473C9035E406F49f4338C0d13c011c71F0A14;
-    address swapZKPVerifier = 0x76D4d96d853A89B738dEC79f030F1d2E262adDDE;
-    address playZKPVerifier = 0x0483e1189d5D8119E9Ed6cD15d1664a944100385;
+    address handZKPVerifier = 0x740ddB00d3932d3517908fec9E80DEAe14EE5F75;
+    address swapZKPVerifier = 0x2cAF9427bca572D57CBe12709691Dc03A4c215c8;
+    address playZKPVerifier = 0xf30cA5e51b4352773201C3557CD4116e909cAB3F;
 
     constructor() 
         ConfirmedOwner(msg.sender)
@@ -109,15 +107,6 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         player.ante = ante; 
 
         depositBalance[playerAddress][gameToken] -= ante;
-        
-        //uint estimate = IVRFWrapper(vrfWrapperAddress).estimateRequestPriceNative(
-        //    callbackGasLimit, 
-        //    1, 
-        //    tx.gasprice);
-
-        // DEBUG
-        //mostRecentEstimate = estimate;
-        //if (msg.value < estimate) revert InsufficientFundsForVRF(); 
         
         // Call VRF.
         uint256 requestId = requestSeed();
@@ -245,13 +234,6 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
         if (ante == 0) revert ZeroAmount();
 
-        // Check VRF fee
-        uint estimate = IVRFWrapper(vrfWrapperAddress).estimateRequestPriceNative(
-            callbackGasLimit, 
-            1, 
-            tx.gasprice);
-
-        if (msg.value < estimate) revert InsufficientFundsForVRF(); 
 
         // Check if all players are eligible to play
         for (uint i = 0; i < TABLE_SIZE; i++) {
@@ -356,14 +338,6 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         // NOTE
         // Make sure the hash order is consistent
         session.discardedCards[playerIndex] = discardedCardsHash;
-
-        // Check VRF fee.
-        uint estimate = IVRFWrapper(vrfWrapperAddress).estimateRequestPriceNative(
-            callbackGasLimit, 
-            1, 
-            tx.gasprice);
-
-        if (msg.value < estimate) revert InsufficientFundsForVRF();
 
         // Call VRF.
         uint256 requestId = requestSeed();
