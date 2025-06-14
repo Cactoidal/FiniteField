@@ -75,6 +75,8 @@ func connect_buttons():
 	$Fold.connect("pressed", fold)
 	$ConcludeGame.connect("pressed", conclude_game)
 	
+	$GetObjectiveSeed.connect("pressed", game_info)
+	$GetVRFSwapSeed.connect("pressed", get_vrf_swap_seed)
 	$ProveSwap.connect("pressed", prove_swap)
 	$PlayCards.connect("pressed", prove_play_cards)
 	
@@ -278,7 +280,7 @@ func load_bytes(path: String) -> PackedByteArray:
 ### GAME VARIABLES
 
 # Game Logic
-var SEPOLIA_GAME_CONTRACT_ADDRESS = "0xae894313ae5D712Edb2Da55aF9bA0c892219EED7"
+var SEPOLIA_GAME_CONTRACT_ADDRESS = "0x0fdB0c100a7aDD31Af1f89D1Fbf13a789B4159ed"
 
 # Token
 var SEPOLIA_GAME_TOKEN_ADDRESS = "0x9acF3472557482091Fe76c2D08F82819Ab9a28eb"
@@ -349,7 +351,7 @@ func got_vrf_seed(callback):
 	var _game_id = callback["result"][3]
 	# DEBUG
 	#calculate_hands()
-	game_info(_game_id)
+	#game_info(_game_id)
 
 
 func game_info(_game_id):
@@ -369,6 +371,8 @@ func got_game_info(callback):
 		return
 	
 	print(callback["result"])
+	
+	print_log("Objective Seed: " + str(callback["result"][2]))
 	#[0] gameToken
 	#[1] startTimestamp
 	#[2] objectiveSeed
@@ -382,6 +386,28 @@ func got_game_info(callback):
 	#[10] vrfSwapSeeds
 	#[11] discardedCards
 	#[12] winners
+
+
+func get_vrf_swap_seed():
+	var callback = EthersWeb.create_callback(self, "got_vrf_swap_seed")
+
+	var data = EthersWeb.get_calldata(GAME_CONTRACT_ABI, "getVRFSwapSeed", [SEPOLIA_GAME_TOKEN_ADDRESS]) 
+	
+	EthersWeb.read_from_contract(
+		"Ethereum Sepolia",
+		SEPOLIA_GAME_CONTRACT_ADDRESS, 
+		data,
+		callback
+		)
+
+func got_vrf_swap_seed(callback):
+	if has_error(callback):
+		return
+	
+	print(callback["result"])
+	vrf_swap_seed = callback["result"][0]
+	print_log("VRF Swap Seed: " + vrf_swap_seed)
+
 
 
 
@@ -498,14 +524,36 @@ func swap_cards():
 	# + uint256 (vrfSeed)
 	# + address (gameToken)
 func prove_swap():
-	# DEBUG
-	var vrf_swap_seed = vrf_seed #<-- need to get the actual seed
 	
 	var fixed_seed = get_random_local_seed()
 	var old_cards = hand["cards"]
 	var indices = [1,2]
 	var new_nullifiers = generate_nullifier_set(2)
 	var discard_nullifier = discarded_cards["nullifier"]
+	
+	# DEBUG
+	# Needs to be done after the transaction is confirmed
+	#     #     #     #     #     #     #     #     #     #
+	#hand["nullifiers"][indices[0]] = new_nullifiers[0]
+	#hand["nullifiers"][indices[1]] = new_nullifiers[1]
+	#
+	#var drawn_cards = generate_hand(vrf_swap_seed, fixed_seed, new_nullifiers)
+	#
+	#hand["cards"][indices[0]] = drawn_cards["cards"][0]
+	#hand["cards"][indices[1]] = drawn_cards["cards"][1]
+	#
+	#var card_hashes = []
+	#for i in range(5):
+		#var card_hash = poseidon([hand["cards"][i], hand["nullifiers"][i]])
+		#hand["card_hashes"][i] = card_hash
+		#card_hashes.push_back(card_hash)
+	#
+	#hand["hand_hash"] = poseidon(card_hashes)
+	#     #     #     #     #     #     #     #     #     #
+	
+	
+	
+	
 	
 	var inputs = {
 		
@@ -635,6 +683,8 @@ func calculate_hands():
 # Predict hands using the set of local seeds
 func generate_hand(_vrf_seed, fixed_seed, nullifiers):
 	
+	var _hand_size = nullifiers.size()
+	
 	# Apply the field modulus before hashing, otherwise large values 
 	# won't validate properly
 	var vrf_seed = window.zkBridge.bigNumberModulus(_vrf_seed, FIELD_MODULUS)
@@ -643,7 +693,7 @@ func generate_hand(_vrf_seed, fixed_seed, nullifiers):
 	
 	var picked_cards = []
 	
-	for card_draw in range(hand_size):
+	for card_draw in range(_hand_size):
 		seed_hash = poseidon([seed_hash])
 	
 		var index = int(window.zkBridge.bigNumberModulus(seed_hash, deck.size()))
@@ -653,7 +703,7 @@ func generate_hand(_vrf_seed, fixed_seed, nullifiers):
 	var cards = []
 	var card_hashes = []
 	
-	for card in range(hand_size):
+	for card in range(_hand_size):
 		var poseidon_hash = poseidon([picked_cards[card], nullifiers[card]])
 		cards.push_back({
 			"card": picked_cards[card],
@@ -1450,6 +1500,25 @@ var GAME_CONTRACT_ABI = [
 			}
 		],
 		"stateMutability": "pure",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "gameToken",
+				"type": "address"
+			}
+		],
+		"name": "getVRFSwapSeed",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
 		"type": "function"
 	},
 	{
