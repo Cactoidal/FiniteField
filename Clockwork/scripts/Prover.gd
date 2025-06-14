@@ -52,7 +52,9 @@ func _ready():
 	
 	# DEBUG
 	# Decode error messages by comparing them to keccak hashes of errors
-	#print(window.walletBridge.getFunctionSelector("GameHasNotStarted()"))
+	#print(window.walletBridge.getFunctionSelector("InvalidZKP()"))
+	
+	#0x657d4462
 
 
 func connect_buttons():
@@ -276,7 +278,7 @@ func load_bytes(path: String) -> PackedByteArray:
 ### GAME VARIABLES
 
 # Game Logic
-var SEPOLIA_GAME_CONTRACT_ADDRESS = "0xBF2282CF0aAed8ac9A44787a33Ad9642c37e5a36"
+var SEPOLIA_GAME_CONTRACT_ADDRESS = "0xae894313ae5D712Edb2Da55aF9bA0c892219EED7"
 
 # Token
 var SEPOLIA_GAME_TOKEN_ADDRESS = "0x9acF3472557482091Fe76c2D08F82819Ab9a28eb"
@@ -293,8 +295,11 @@ var vrf_seed
 var vrf_swap_seed
 var hand 
 var discarded_cards
-var game_id = 5
+var game_id = 1
 
+# DEBUG "get vrf seed" actually just pulls all the player info, can be used
+# to get game id
+# similarly can do the same with gameSessions
 var player_info
 
 
@@ -329,12 +334,54 @@ func get_vrf_seed():
 func got_vrf_seed(callback):
 	if has_error(callback):
 		return
+
+	#[0] vrfSeed
+	#[1] ante
+	#[2] currentHand
+	#[3] gameId
+	#[4] playerIndex
+	#[5] totalBidAmount
+	#[6] hasRequestedSeed
 	
 	vrf_seed = callback["result"][0]
 	print_log("VRF Seed: " + vrf_seed)
 	
+	var _game_id = callback["result"][3]
 	# DEBUG
 	#calculate_hands()
+	game_info(_game_id)
+
+
+func game_info(_game_id):
+	var callback = EthersWeb.create_callback(self, "got_game_info")
+
+	var data = EthersWeb.get_calldata(GAME_CONTRACT_ABI, "gameSessions", [_game_id]) 
+	
+	EthersWeb.read_from_contract(
+		"Ethereum Sepolia",
+		SEPOLIA_GAME_CONTRACT_ADDRESS, 
+		data,
+		callback
+		)
+
+func got_game_info(callback):
+	if has_error(callback):
+		return
+	
+	print(callback["result"])
+	#[0] gameToken
+	#[1] startTimestamp
+	#[2] objectiveSeed
+	#[3] maximumSpend
+	#[4] totalPot
+	#[5] highBid
+	#[6] hasConcluded
+	#[7] players
+	#[8] exited
+	#[9] scores
+	#[10] vrfSwapSeeds
+	#[11] discardedCards
+	#[12] winners
 
 
 
@@ -452,12 +499,13 @@ func swap_cards():
 	# + address (gameToken)
 func prove_swap():
 	# DEBUG
-	var vrf_swap_seed = 478274876#vrf_seed
+	var vrf_swap_seed = vrf_seed #<-- need to get the actual seed
+	
 	var fixed_seed = get_random_local_seed()
-	var old_cards = [1,2,3,4,5]#hand["cards"]
+	var old_cards = hand["cards"]
 	var indices = [1,2]
 	var new_nullifiers = generate_nullifier_set(2)
-	var discard_nullifier = 4238742#discarded_cards["nullifier"]
+	var discard_nullifier = discarded_cards["nullifier"]
 	
 	var inputs = {
 		
@@ -508,8 +556,8 @@ func prove_swap():
 	# + address (gameToken)
 func prove_play_cards():
 	# DEBUG
-	var nullifiers = generate_nullifier_set(5)#hand["nullifiers"]
-	var cards = [1,2,3,4,5]#hand["cards"]
+	var nullifiers = hand["nullifiers"]
+	var cards = hand["cards"]
 	
 	var inputs = {
 		
@@ -1774,6 +1822,40 @@ var GAME_CONTRACT_ABI = [
 		"name": "transferOwnership",
 		"outputs": [],
 		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256[2]",
+				"name": "_pA",
+				"type": "uint256[2]"
+			},
+			{
+				"internalType": "uint256[2][2]",
+				"name": "_pB",
+				"type": "uint256[2][2]"
+			},
+			{
+				"internalType": "uint256[2]",
+				"name": "_pC",
+				"type": "uint256[2]"
+			},
+			{
+				"internalType": "uint256[3]",
+				"name": "_pubSignals",
+				"type": "uint256[3]"
+			}
+		],
+		"name": "verifyHandProof",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
 		"type": "function"
 	},
 	{

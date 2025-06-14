@@ -76,50 +76,77 @@ offset_bottom = 528.0
 mouse_default_cursor_shape = 2
 text = "Get Seed & Hands"
 
-[node name="GetProof" type="Button" parent="."]
+[node name="ProveHand" type="Button" parent="."]
 layout_mode = 0
 offset_left = 45.0
 offset_top = 546.0
 offset_right = 227.0
 offset_bottom = 600.0
 mouse_default_cursor_shape = 2
-text = "Get Proof"
+text = "Prove Hand"
 
 [node name="StartGame" type="Button" parent="."]
 layout_mode = 0
 offset_left = 936.0
-offset_top = 244.0
+offset_top = 63.0
 offset_right = 1118.0
-offset_bottom = 298.0
+offset_bottom = 117.0
 mouse_default_cursor_shape = 2
 text = "Start Game"
 
 [node name="Raise" type="Button" parent="."]
 layout_mode = 0
 offset_left = 936.0
-offset_top = 316.0
+offset_top = 135.0
 offset_right = 1118.0
-offset_bottom = 370.0
+offset_bottom = 189.0
 mouse_default_cursor_shape = 2
 text = "Raise"
 
 [node name="SwapCards" type="Button" parent="."]
 layout_mode = 0
 offset_left = 936.0
-offset_top = 388.0
+offset_top = 207.0
 offset_right = 1118.0
-offset_bottom = 442.0
+offset_bottom = 261.0
 mouse_default_cursor_shape = 2
 text = "Swap Cards"
+
+[node name="ProveSwap" type="Button" parent="."]
+layout_mode = 0
+offset_left = 936.0
+offset_top = 279.0
+offset_right = 1118.0
+offset_bottom = 333.0
+mouse_default_cursor_shape = 2
+text = "Prove Swap"
+
+[node name="PlayCards" type="Button" parent="."]
+layout_mode = 0
+offset_left = 936.0
+offset_top = 351.0
+offset_right = 1118.0
+offset_bottom = 405.0
+mouse_default_cursor_shape = 2
+text = "Play Cards"
 
 [node name="Fold" type="Button" parent="."]
 layout_mode = 0
 offset_left = 936.0
-offset_top = 460.0
+offset_top = 423.0
 offset_right = 1118.0
-offset_bottom = 514.0
+offset_bottom = 477.0
 mouse_default_cursor_shape = 2
 text = "Fold"
+
+[node name="ConcludeGame" type="Button" parent="."]
+layout_mode = 0
+offset_left = 936.0
+offset_top = 556.0
+offset_right = 1118.0
+offset_bottom = 610.0
+mouse_default_cursor_shape = 2
+text = "Conclude Game"
 
 [node name="Log" type="TextEdit" parent="."]
 layout_mode = 0
