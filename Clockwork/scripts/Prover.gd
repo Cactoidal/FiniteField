@@ -52,9 +52,9 @@ func _ready():
 	
 	# DEBUG
 	# Decode error messages by comparing them to keccak hashes of errors
-	#print(window.walletBridge.getFunctionSelector("InvalidZKP()"))
+	print(window.walletBridge.getFunctionSelector("InvalidVRFSeed()"))
 	
-	#0x657d4462
+	#0xbac650ab
 
 
 func connect_buttons():
@@ -64,7 +64,7 @@ func connect_buttons():
 	$ProveHand.connect("pressed", get_hand_zk_proof)
 	
 	$BuySeed.connect("pressed", buy_seed)
-	$CalculateHands.connect("pressed", get_vrf_seed)
+	$GetHandSeed.connect("pressed", get_vrf_seed)
 	
 	$MintAndDeposit.connect("pressed", mint_and_deposit)
 	$WithdrawETH.connect("pressed", withdraw_eth)
@@ -280,7 +280,7 @@ func load_bytes(path: String) -> PackedByteArray:
 ### GAME VARIABLES
 
 # Game Logic
-var SEPOLIA_GAME_CONTRACT_ADDRESS = "0x0fdB0c100a7aDD31Af1f89D1Fbf13a789B4159ed"
+var SEPOLIA_GAME_CONTRACT_ADDRESS = "0x6DaFfa1a9271F973CF4e633c2AB502D6A281bFaD"
 
 # Token
 var SEPOLIA_GAME_TOKEN_ADDRESS = "0x9acF3472557482091Fe76c2D08F82819Ab9a28eb"
@@ -297,7 +297,7 @@ var vrf_seed
 var vrf_swap_seed
 var hand 
 var discarded_cards
-var game_id = 1
+var game_id = 2
 
 # DEBUG "get vrf seed" actually just pulls all the player info, can be used
 # to get game id
@@ -354,10 +354,10 @@ func got_vrf_seed(callback):
 	#game_info(_game_id)
 
 
-func game_info(_game_id):
+func game_info():
 	var callback = EthersWeb.create_callback(self, "got_game_info")
 
-	var data = EthersWeb.get_calldata(GAME_CONTRACT_ABI, "gameSessions", [_game_id]) 
+	var data = EthersWeb.get_calldata(GAME_CONTRACT_ABI, "gameSessions", [game_id]) 
 	
 	EthersWeb.read_from_contract(
 		"Ethereum Sepolia",
@@ -388,10 +388,12 @@ func got_game_info(callback):
 	#[12] winners
 
 
+# DEBUG 
+# Only returning zero?
 func get_vrf_swap_seed():
 	var callback = EthersWeb.create_callback(self, "got_vrf_swap_seed")
 
-	var data = EthersWeb.get_calldata(GAME_CONTRACT_ABI, "getVRFSwapSeed", [SEPOLIA_GAME_TOKEN_ADDRESS]) 
+	var data = EthersWeb.get_calldata(GAME_CONTRACT_ABI, "getVRFSwapSeed", [connected_wallet, SEPOLIA_GAME_TOKEN_ADDRESS]) 
 	
 	EthersWeb.read_from_contract(
 		"Ethereum Sepolia",
@@ -404,7 +406,6 @@ func got_vrf_swap_seed(callback):
 	if has_error(callback):
 		return
 	
-	print(callback["result"])
 	vrf_swap_seed = callback["result"][0]
 	print_log("VRF Swap Seed: " + vrf_swap_seed)
 
@@ -526,7 +527,7 @@ func swap_cards():
 func prove_swap():
 	
 	var fixed_seed = get_random_local_seed()
-	var old_cards = hand["cards"]
+	var old_cards = hand["card_hashes"]
 	var indices = [1,2]
 	var new_nullifiers = generate_nullifier_set(2)
 	var discard_nullifier = discarded_cards["nullifier"]
@@ -1504,6 +1505,11 @@ var GAME_CONTRACT_ABI = [
 	},
 	{
 		"inputs": [
+			{
+				"internalType": "address",
+				"name": "playerAddress",
+				"type": "address"
+			},
 			{
 				"internalType": "address",
 				"name": "gameToken",

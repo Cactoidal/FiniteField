@@ -67,14 +67,14 @@ offset_bottom = 456.0
 mouse_default_cursor_shape = 2
 text = "Buy Seed"
 
-[node name="CalculateHands" type="Button" parent="."]
+[node name="GetHandSeed" type="Button" parent="."]
 layout_mode = 0
 offset_left = 45.0
 offset_top = 474.0
 offset_right = 227.0
 offset_bottom = 528.0
 mouse_default_cursor_shape = 2
-text = "Get Seed & Hands"
+text = "Get Hand Seed"
 
 [node name="ProveHand" type="Button" parent="."]
 layout_mode = 0
