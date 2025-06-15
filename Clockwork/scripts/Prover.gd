@@ -52,9 +52,10 @@ func _ready():
 	
 	# DEBUG
 	# Decode error messages by comparing them to keccak hashes of errors
-	print(window.walletBridge.getFunctionSelector("InvalidVRFSeed()"))
+	#print(window.walletBridge.getFunctionSelector("InvalidHash()"))
 	
-	#0xbac650ab
+	#0x0af806e0
+
 
 
 func connect_buttons():
@@ -280,7 +281,7 @@ func load_bytes(path: String) -> PackedByteArray:
 ### GAME VARIABLES
 
 # Game Logic
-var SEPOLIA_GAME_CONTRACT_ADDRESS = "0x6DaFfa1a9271F973CF4e633c2AB502D6A281bFaD"
+var SEPOLIA_GAME_CONTRACT_ADDRESS = "0x5507ea3aAB6c1EF18B1AE24f29e6D207CE64905b"
 
 # Token
 var SEPOLIA_GAME_TOKEN_ADDRESS = "0x9acF3472557482091Fe76c2D08F82819Ab9a28eb"
@@ -295,9 +296,12 @@ var maximum_spend = "1000"
 
 var vrf_seed
 var vrf_swap_seed
-var hand 
+var hand = {}
 var discarded_cards
-var game_id = 2
+
+# DEBUG 
+# Add a way to pull this from the chain instead of setting it manually here
+var game_id = 1
 
 # DEBUG "get vrf seed" actually just pulls all the player info, can be used
 # to get game id
@@ -369,8 +373,6 @@ func game_info():
 func got_game_info(callback):
 	if has_error(callback):
 		return
-	
-	print(callback["result"])
 	
 	print_log("Objective Seed: " + str(callback["result"][2]))
 	#[0] gameToken
@@ -525,36 +527,36 @@ func swap_cards():
 	# + uint256 (vrfSeed)
 	# + address (gameToken)
 func prove_swap():
-	
+
 	var fixed_seed = get_random_local_seed()
 	var old_cards = hand["card_hashes"]
 	var indices = [1,2]
 	var new_nullifiers = generate_nullifier_set(2)
 	var discard_nullifier = discarded_cards["nullifier"]
 	
+	
 	# DEBUG
 	# Needs to be done after the transaction is confirmed
 	#     #     #     #     #     #     #     #     #     #
-	#hand["nullifiers"][indices[0]] = new_nullifiers[0]
-	#hand["nullifiers"][indices[1]] = new_nullifiers[1]
-	#
-	#var drawn_cards = generate_hand(vrf_swap_seed, fixed_seed, new_nullifiers)
-	#
-	#hand["cards"][indices[0]] = drawn_cards["cards"][0]
-	#hand["cards"][indices[1]] = drawn_cards["cards"][1]
-	#
+	hand["nullifiers"][indices[0]] = new_nullifiers[0]
+	hand["nullifiers"][indices[1]] = new_nullifiers[1]
+	
+	var drawn_cards = generate_hand(vrf_swap_seed, fixed_seed, new_nullifiers)
+	
+	hand["cards"][indices[0]] = drawn_cards["cards"][0]
+	hand["cards"][indices[1]] = drawn_cards["cards"][1]
+
+	
+	
 	#var card_hashes = []
 	#for i in range(5):
 		#var card_hash = poseidon([hand["cards"][i], hand["nullifiers"][i]])
-		#hand["card_hashes"][i] = card_hash
 		#card_hashes.push_back(card_hash)
 	#
-	#hand["hand_hash"] = poseidon(card_hashes)
+	#hand["hand_hash"] = poseidon(hand["cards"])
+	
+
 	#     #     #     #     #     #     #     #     #     #
-	
-	
-	
-	
 	
 	var inputs = {
 		
@@ -588,6 +590,7 @@ func prove_swap():
 		swapCards_zk_proving_key, 
 		window.swapCardsWitnessCalculator,
 		"proveSwapCards")
+
 
 
 #To prove, we need:
