@@ -389,7 +389,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
         // Validate VRF seed
         // Must apply modulus for large numbers to validate correctly
-        if (vrfSwapSeed != _pubSignals[3] % FIELD_MODULUS) revert InvalidVRFSeed();
+        if (_pubSignals[3] != vrfSwapSeed % FIELD_MODULUS) revert InvalidVRFSeed();
 
         // Update to new hand
         player.currentHand = _pubSignals[2];
