@@ -627,8 +627,8 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         player.hasRequestedSeed = false;
     }
 
-    function getVRFSwapSeed(address gameToken) public view returns(uint) {
-        playerStatus storage player = tokenPlayerStatus[msg.sender][gameToken];
+    function getVRFSwapSeed(address playerAddress, address gameToken) public view returns(uint256) {
+        playerStatus storage player = tokenPlayerStatus[playerAddress][gameToken];
         uint gameId = player.gameId;
         uint playerIndex = player.playerIndex;
 
