@@ -37,6 +37,7 @@ template Swap() {
     signal output oldHandHash;
     signal output newHandHash;
 
+
     // Hash all cards to get the oldHandHash
     component oldHandHasher = Poseidon(handSize);
 
@@ -61,6 +62,8 @@ template Swap() {
     prng._seed <== seedHash;
     var selectedCards[drawSize] = prng.selected;
 
+    
+
     component cardHasher[drawSize];
     var cardHashes[drawSize];
 
@@ -72,13 +75,14 @@ template Swap() {
         cardHashes[i] = cardHasher[i].out;
     }
 
+
     component discardedHasher = Poseidon(3);
     discardedHasher.inputs[0] <== indices[0];
     discardedHasher.inputs[1] <== indices[1];
     discardedHasher.inputs[2] <== discardNullifier;
     discardedCardHash <== discardedHasher.out;
 
-    var newCards[handSize];
+    var newCards[handSize] = oldCards;
 
     var loopSize = handSize * drawSize;
     component eqs[loopSize];
@@ -100,7 +104,7 @@ template Swap() {
 
             // If k is not the specified index, keeps the old hash at 
             // hand index k; otherwise, reduces the hash to zero.
-            keepOld[loopIndex] <== oldCards[k] * (1 - isTarget);
+            keepOld[loopIndex] <== newCards[k] * (1 - isTarget);
 
             // If k is the specified index, adds the new card found 
             // at draw index j; otherwise, does nothing.
