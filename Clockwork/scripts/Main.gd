@@ -5,6 +5,7 @@ extends Control
 
 var connected_wallet
 var player_status = {}
+var in_game = false
 
 
 var listening = false
@@ -64,7 +65,14 @@ func connect_buttons():
 	$Info/WithdrawETH.connect("pressed", withdraw_eth)
 	
 	$Prompt/BuySeed.connect("pressed", buy_seed)
-	$Prompt/GetHand.connect("pressed", get_hand_zk_proof)
+	$Prompt/GetHand.connect("pressed", get_hand)
+	$Prompt/StartGame.connect("pressed", start_game)
+	
+	$Overlay/Warning/CopyHand.connect("pressed", copy_hand)
+	
+	#DEBUG
+	$Prompt/RejoinGame.connect("pressed", conclude_game)
+	#$Prompt/RejoinGame.connect("pressed", rejoin_game)
 	
 	EthersWeb.register_transaction_log(self, "receive_tx_receipt")
 
@@ -82,6 +90,8 @@ func got_account_list(callback):
 		fade("OUT", $ConnectWallet, move_connect_button)
 		fade("OUT", $Title, move_connect_button)
 		fade("IN", $Info, fade.bind("IN", $Prompt))
+		
+		print_log("Retrieving player info for " + connected_wallet)
 		get_player_status(connected_wallet)
 		get_token_balance(connected_wallet)
 
@@ -129,8 +139,6 @@ func get_player_status(player_address):
 		data,
 		callback
 		)
-		
-	print_log("Retrieving player info...")
 
 
 func get_token_balance(player_address):
@@ -144,8 +152,6 @@ func get_token_balance(player_address):
 		data,
 		callback
 		)
-	
-	print_log("Getting balance for " + player_address)
 
 func received_token_balance(callback):
 	if callback["result"]:
@@ -154,6 +160,7 @@ func received_token_balance(callback):
 	else:
 		$Info/TokenBalance.text = ""
 		check_rpc()
+
 
 
 func received_player_status(callback):
@@ -165,56 +172,111 @@ func received_player_status(callback):
 		player_status["total_bid_amount"] = callback["result"][5]
 		player_status["has_requested_seed"] = callback["result"][6]
 		
-		
 		if player_status["game_id"] != "0":
-			prompt_rejoin_game()
-		elif player_status["hand_hash"] != "0":
-			prompt_create_game()
-		elif player_status["vrf_seed"] != "0":
-			prompt_prove_hand()
-		else:
-			prompt_buy_seed()
-			
+			if !in_game:
+				handle_pregame()
+			else:
+				#update game
+				pass
+				
+		elif !in_game:
+			handle_pregame()
+	
 	else:
 		check_rpc()
 
 
-
+var PREGAME_STATE = ""
+var must_copy_hand = true
+func handle_pregame():
+	var _pregame_state = ""
+			
+	if player_status["game_id"] != "0":
+		_pregame_state = "REJOIN_GAME"
+				
+	elif player_status["hand_hash"] != "0":
+		_pregame_state = "CREATE_GAME"
+				
+	elif player_status["vrf_seed"] != "0":
+		_pregame_state = "PROVE_HAND"
+			
+	elif player_status["has_requested_seed"]:
+		_pregame_state = "WAIT_FOR_SEED"
+		
+	else:
+		_pregame_state = "BUY_SEED"
+			
+	if PREGAME_STATE != _pregame_state:
+		reset_prompts()
+		PREGAME_STATE = _pregame_state
+			
+	match PREGAME_STATE:
+		"REJOIN_GAME": prompt_rejoin_game()
+		"CREATE_GAME": prompt_create_game()
+		"PROVE_HAND": prompt_prove_hand()
+		"WAIT_FOR_SEED": wait_for_seed()
+		"BUY_SEED": prompt_buy_seed()
 
 
 
 func prompt_buy_seed():
 	print_log("Seed not found")
-	fade("IN", $Prompt/BuySeed)
+	fadein_button($Prompt/BuySeed)
+
+func wait_for_seed():
+	print_log("Waiting for VRF response...")
 
 
 func prompt_prove_hand():
 	print_log("Hand not found")
-	fade("IN", $Prompt/GetHand)
+	fadein_button($Prompt/GetHand)
+	must_copy_hand = true
 	
 
 func prompt_create_game():
 	print_log("Game ID not found")
+	fadein_button($Prompt/StartGame)
 
 
 func prompt_rejoin_game():
 	print_log("Game ID found.  Rejoin?")
+	fadein_button($Prompt/RejoinGame)
+
+
+func get_hand():
+	if must_copy_hand:
+		hand = generate_hand(player_status["vrf_seed"], get_random_local_seed(), generate_nullifier_set(hand_size))
+		$Overlay/Warning/HandText.text = str(hand)
+		$Overlay.visible = true
+	else:
+		get_hand_zk_proof()
+
+
+func copy_hand():
+	copy_text($Overlay/Warning/HandText)
+	$Overlay.visible = false
+	must_copy_hand = false
+	
 
 
 
 
+
+# Needs to resolve based on tx type
 func receive_tx_receipt(tx_receipt):
 	
 	var tx_hash = tx_receipt["hash"]
 	var status = str(tx_receipt["status"])
 	
-	var txt = "Tx: " + tx_hash + "\nStatus: " + status
-	
 	if status == "1":
 		var blockNumber = str(tx_receipt["blockNumber"])
-		txt += "\nIncluded in block " + blockNumber
+		print_log("Tx included in block " + blockNumber)
 	
+	if status == "0":
+		print_log("Transaction failed")
+		
 	get_token_balance(connected_wallet)
+	get_player_status(connected_wallet)
 	#print_log(txt)
 
 
@@ -320,7 +382,7 @@ func get_proof_calldata(callback):
 
 
 # DEBUG
-# Put custom logic here
+# Needs to resolve based on tx type
 func await_transaction(callback):
 	if "result" in callback.keys():
 		print_log("Transaction Sent")
@@ -421,40 +483,6 @@ func buy_seed():
 
 
 
-func get_vrf_seed():
-	var callback = EthersWeb.create_callback(self, "got_vrf_seed")
-
-	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "tokenPlayerStatus", [connected_wallet, SEPOLIA_GAME_TOKEN_ADDRESS]) 
-	
-	EthersWeb.read_from_contract(
-		"Ethereum Sepolia",
-		SEPOLIA_GAME_LOGIC_ADDRESS, 
-		data,
-		callback
-		)
-
-
-func got_vrf_seed(callback):
-	if has_error(callback):
-		return
-
-	#[0] vrfSeed
-	#[1] ante
-	#[2] currentHand
-	#[3] gameId
-	#[4] playerIndex
-	#[5] totalBidAmount
-	#[6] hasRequestedSeed
-	
-	player_status["vrf_seed"] = callback["result"][0]
-	print_log("VRF Seed: " + player_status["vrf_seed"])
-	
-	var _game_id = callback["result"][3]
-	# DEBUG
-	#calculate_hands()
-	#game_info(_game_id)
-
-
 func game_info():
 	var callback = EthersWeb.create_callback(self, "got_game_info")
 
@@ -516,7 +544,7 @@ func get_hand_zk_proof():
 		print_log("Please connect your wallet")
 		return
 	
-	if !player_status["vrf_seed"]:
+	if !hand["vrf_seed"]:
 		print_log("Please get the current seed")
 		return
 	
@@ -526,19 +554,19 @@ func get_hand_zk_proof():
 	var inputs = {   
 	# Must come from the smart contract (will be validated on-chain 
 	# using the public input)
-	"vrfSeed": player_status["vrf_seed"],
+	"vrfSeed": hand["vrf_seed"],
 	
 	# Selected from the set of local seeds, preferably chosen because it 
 	# generates the hand containing the most preferred cards
-	"fixedSeed": get_random_local_seed(),
+	"fixedSeed": hand["fixed_seed"],
 
-	"nullifiers": generate_nullifier_set(hand_size),
+	"nullifiers": hand["nullifiers"],
 	
 	"gameToken": SEPOLIA_GAME_TOKEN_ADDRESS
   	}
 	
 	# Cache the hand locally for later use
-	hand = generate_hand(inputs["vrfSeed"], inputs["fixedSeed"], inputs["nullifiers"])
+	#hand = generate_hand(inputs["vrfSeed"], inputs["fixedSeed"], inputs["nullifiers"])
 
 	# Must define public_types for the callback
 	var public_types  = [
@@ -744,12 +772,12 @@ func prove_play_cards():
 
 
 func conclude_game():
-	# DEBUG
-	# need to get the gameId 
-	
-	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "concludeGame", [game_id])
+	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "concludeGame", [player_status["game_id"]])
 	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data)
 
+
+func rejoin_game():
+	pass
 
 
 
@@ -815,6 +843,8 @@ func generate_hand(_vrf_seed, fixed_seed, nullifiers):
 	var hand_hash = poseidon(card_hashes)
 	
 	var hand = {
+		"vrf_seed": vrf_seed,
+		"fixed_seed": fixed_seed,
 		"cards": picked_cards,
 		"nullifiers": nullifiers,
 		"card_hashes": card_hashes,
@@ -2534,3 +2564,13 @@ func move_connect_button():
 func reset_prompts():
 	for prompt_button in $Prompt.get_children():
 		prompt_button.modulate.a = 0
+		prompt_button.visible = false
+
+func fadein_button(_button):
+	_button.visible = true
+	fade("IN", _button)
+
+func copy_text(source):
+	var text_to_copy = source.text
+	var js_code = "navigator.clipboard.writeText(%s);" % JSON.stringify(text_to_copy)
+	JavaScriptBridge.eval(js_code)

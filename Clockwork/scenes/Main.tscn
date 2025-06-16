@@ -141,6 +141,40 @@ grow_vertical = 2
 mouse_default_cursor_shape = 2
 text = "Get Hand"
 
+[node name="StartGame" type="Button" parent="Prompt"]
+modulate = Color(1, 1, 1, 0)
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -75.0
+offset_top = -27.0
+offset_right = 75.0
+offset_bottom = 27.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_default_cursor_shape = 2
+text = "Start Game"
+
+[node name="RejoinGame" type="Button" parent="Prompt"]
+modulate = Color(1, 1, 1, 0)
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -75.0
+offset_top = -27.0
+offset_right = 75.0
+offset_bottom = 27.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_default_cursor_shape = 2
+text = "Rejoin Game"
+
 [node name="Curtain" type="ColorRect" parent="."]
 layout_mode = 1
 anchors_preset = 15
@@ -150,3 +184,82 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 color = Color(0, 0, 0, 1)
+
+[node name="Overlay" type="ColorRect" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0, 0, 0, 0.431373)
+
+[node name="Warning" type="ColorRect" parent="Overlay"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -180.0
+offset_top = -151.0
+offset_right = 180.0
+offset_bottom = 285.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0, 0, 0, 1)
+
+[node name="Prompt" type="Label" parent="Overlay/Warning"]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -144.5
+offset_top = 16.0
+offset_right = 140.5
+offset_bottom = 65.0
+grow_horizontal = 2
+text = "WARNING!
+
+The cards in your hand are composed of secret numbers that do not persist beyond this session.  
+
+If you inadvertently close the browser window, your hand can be restored by pasting in these values.
+
+To continue, please copy the restore data below.  "
+horizontal_alignment = 1
+autowrap_mode = 3
+
+[node name="HandText" type="LineEdit" parent="Overlay/Warning"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -173.0
+offset_top = 123.5
+offset_right = 173.0
+offset_bottom = 154.5
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+editable = false
+
+[node name="CopyHand" type="Button" parent="Overlay/Warning"]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -75.5
+offset_top = -45.0
+offset_right = 75.5
+offset_bottom = -14.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_default_cursor_shape = 2
+text = "Copy Restore Data"
