@@ -193,10 +193,10 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-mouse_filter = 2
 color = Color(0, 0, 0, 0.431373)
 
 [node name="Warning" type="ColorRect" parent="Overlay"]
+visible = false
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -204,9 +204,9 @@ anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -180.0
-offset_top = -151.0
+offset_top = -299.0
 offset_right = 180.0
-offset_bottom = 285.0
+offset_bottom = 137.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
@@ -263,3 +263,191 @@ grow_horizontal = 2
 grow_vertical = 0
 mouse_default_cursor_shape = 2
 text = "Copy Restore Data"
+
+[node name="Restore" type="ColorRect" parent="Overlay"]
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -180.0
+offset_top = -299.0
+offset_right = 180.0
+offset_bottom = 137.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0, 0, 0, 1)
+
+[node name="Prompt" type="Label" parent="Overlay/Restore"]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -144.5
+offset_top = 6.0
+offset_right = 140.5
+offset_bottom = 55.0
+grow_horizontal = 2
+text = "Restore your hand by right-clicking and pasting the restore data below:"
+horizontal_alignment = 1
+autowrap_mode = 3
+
+[node name="RestoreText" type="TextEdit" parent="Overlay/Restore"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -148.0
+offset_top = -152.0
+offset_right = 149.0
+offset_bottom = 40.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="RestoreHand" type="Button" parent="Overlay/Restore"]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -75.5
+offset_top = -168.0
+offset_right = 75.5
+offset_bottom = -137.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_default_cursor_shape = 2
+text = "Restore Hand"
+
+[node name="DeletePrompt" type="Label" parent="Overlay/Restore"]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -142.5
+offset_top = -125.0
+offset_right = 142.5
+offset_bottom = -50.0
+grow_horizontal = 2
+grow_vertical = 0
+text = "If you no longer have the data, you must delete the hand by joining
+and concluding a game:"
+horizontal_alignment = 1
+autowrap_mode = 3
+
+[node name="DeleteHand" type="Button" parent="Overlay/Restore"]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -75.5
+offset_top = -38.0
+offset_right = 75.5
+offset_bottom = -7.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_default_cursor_shape = 2
+text = "Delete Hand"
+
+[node name="StartGame" type="ColorRect" parent="Overlay"]
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -180.0
+offset_top = -299.0
+offset_right = 180.0
+offset_bottom = 137.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0, 0, 0, 1)
+
+[node name="Prompt" type="Label" parent="Overlay/StartGame"]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -144.5
+offset_top = 6.0
+offset_right = 140.5
+offset_bottom = 55.0
+grow_horizontal = 2
+text = "To play solo DEMO mode with no opponents, leave the following entries blank.
+
+Otherwise, paste the addresses of up to 3 opponents.
+
+To be eligible to play, all opponents must have created and proven a hand on-chain."
+horizontal_alignment = 1
+autowrap_mode = 3
+
+[node name="StartGame" type="Button" parent="Overlay/StartGame"]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -75.5
+offset_top = -45.0
+offset_right = 75.5
+offset_bottom = -14.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_default_cursor_shape = 2
+text = "Start Game"
+
+[node name="Address1" type="LineEdit" parent="Overlay/StartGame"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -171.5
+offset_top = 59.0
+offset_right = 171.5
+offset_bottom = 90.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Address2" type="LineEdit" parent="Overlay/StartGame"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -171.5
+offset_top = 96.0
+offset_right = 171.5
+offset_bottom = 127.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Address3" type="LineEdit" parent="Overlay/StartGame"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -171.5
+offset_top = 133.0
+offset_right = 171.5
+offset_bottom = 164.0
+grow_horizontal = 2
+grow_vertical = 2

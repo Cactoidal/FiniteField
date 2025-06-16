@@ -66,9 +66,12 @@ func connect_buttons():
 	
 	$Prompt/BuySeed.connect("pressed", buy_seed)
 	$Prompt/GetHand.connect("pressed", get_hand)
-	$Prompt/StartGame.connect("pressed", start_game)
+	$Prompt/StartGame.connect("pressed", select_game_mode)
 	
 	$Overlay/Warning/CopyHand.connect("pressed", copy_hand)
+	$Overlay/Restore/RestoreHand.connect("pressed", restore_hand)
+	$Overlay/Restore/DeleteHand.connect("pressed", delete_hand)
+	$Overlay/StartGame/StartGame.connect("pressed", start_game)
 	
 	#DEBUG
 	$Prompt/RejoinGame.connect("pressed", conclude_game)
@@ -98,13 +101,25 @@ func got_account_list(callback):
 
 # Check for disconnections or account switches
 var poll_timer = 1.5
+var status_poll_timer = 4
 func _process(delta):
 	if connected_wallet:
+		
 		poll_timer -= delta
+		status_poll_timer -= delta
+		
 		if poll_timer < 0:
 			var callback = EthersWeb.create_callback(self, "polled_accounts")
 			EthersWeb.poll_accounts(callback)
 			poll_timer = 1.5
+
+
+# DEBUG
+# Check if invited into a game
+# If, at any point in time, the player has a valid hand
+# and a gameId, they should be automatically moved from
+# pregame state to game state.  Rejoining is similarly 
+# automatic
 
 
 func polled_accounts(callback):
@@ -119,16 +134,28 @@ func polled_accounts(callback):
 		if connected_wallet != wallet:
 			get_player_status(wallet)
 			get_token_balance(wallet)
+		
+		# Query on-chain state every few seconds
+		elif status_poll_timer < 0:
+			get_player_status(connected_wallet)
+			
 		connected_wallet = wallet
 		
 		if prompt_connect:
 			prompt_connect = false
 			fade("OUT", $ConnectWallet)
+		
+		
 
 
 
 
 func get_player_status(player_address):
+	
+	# Reset the poll timer with every request, since a request
+	# can come from multiple sources
+	status_poll_timer = 4
+	
 	var callback = EthersWeb.create_callback(self, "received_player_status")
 
 	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "tokenPlayerStatus", [player_address, SEPOLIA_GAME_TOKEN_ADDRESS]) 
@@ -172,6 +199,7 @@ func received_player_status(callback):
 		player_status["total_bid_amount"] = callback["result"][5]
 		player_status["has_requested_seed"] = callback["result"][6]
 		
+		
 		if player_status["game_id"] != "0":
 			if !in_game:
 				handle_pregame()
@@ -192,10 +220,16 @@ func handle_pregame():
 	var _pregame_state = ""
 			
 	if player_status["game_id"] != "0":
-		_pregame_state = "REJOIN_GAME"
+		if !"hand_hash" in hand:
+			_pregame_state = "RESTORE_HAND"
+		else:
+			_pregame_state = "REJOIN_GAME"
 				
 	elif player_status["hand_hash"] != "0":
-		_pregame_state = "CREATE_GAME"
+		if !"hand_hash" in hand:
+			_pregame_state = "RESTORE_HAND"
+		else:
+			_pregame_state = "CREATE_GAME"
 				
 	elif player_status["vrf_seed"] != "0":
 		_pregame_state = "PROVE_HAND"
@@ -209,10 +243,14 @@ func handle_pregame():
 	if PREGAME_STATE != _pregame_state:
 		reset_prompts()
 		PREGAME_STATE = _pregame_state
+	else:
+		#DEBUG
+		return
 			
 	match PREGAME_STATE:
 		"REJOIN_GAME": prompt_rejoin_game()
 		"CREATE_GAME": prompt_create_game()
+		"RESTORE_HAND": prompt_restore_hand()
 		"PROVE_HAND": prompt_prove_hand()
 		"WAIT_FOR_SEED": wait_for_seed()
 		"BUY_SEED": prompt_buy_seed()
@@ -231,7 +269,17 @@ func prompt_prove_hand():
 	print_log("Hand not found")
 	fadein_button($Prompt/GetHand)
 	must_copy_hand = true
+
+
+func prompt_restore_hand():
+	$Overlay/Restore.visible = true
+	$Overlay.visible = true
 	
+	if player_status["game_id"] != "0":
+		$Overlay/Restore/DeleteHand.text = "Conclude Game"
+	else:
+		$Overlay/Restore/DeleteHand.text = "Join Game"
+
 
 func prompt_create_game():
 	print_log("Game ID not found")
@@ -239,7 +287,7 @@ func prompt_create_game():
 
 
 func prompt_rejoin_game():
-	print_log("Game ID found.  Rejoin?")
+	print_log("Game ID found.  Joining...")
 	fadein_button($Prompt/RejoinGame)
 
 
@@ -247,6 +295,7 @@ func get_hand():
 	if must_copy_hand:
 		hand = generate_hand(player_status["vrf_seed"], get_random_local_seed(), generate_nullifier_set(hand_size))
 		$Overlay/Warning/HandText.text = str(hand)
+		$Overlay/Warning.visible = true
 		$Overlay.visible = true
 	else:
 		get_hand_zk_proof()
@@ -254,9 +303,55 @@ func get_hand():
 
 func copy_hand():
 	copy_text($Overlay/Warning/HandText)
+	$Overlay/Warning.visible = false
 	$Overlay.visible = false
 	must_copy_hand = false
-	
+
+
+func restore_hand():
+	var hand_text = $Overlay/Restore/RestoreText.text
+	var hand_json = JSON.parse_string(hand_text)
+	if !hand_json:
+		print_log("Invalid JSON")
+		return
+	if hand_json.keys() != ["vrf_seed", "fixed_seed", "cards", "nullifiers", "card_hashes", "hand_hash"]:
+		print_log("Invalid JSON")
+		return
+	if hand_json["hand_hash"] != player_status["hand_hash"]:
+		print_log("Hand does not match on-chain hash")
+		return
+		
+	hand = hand_json
+	$Overlay/Restore.visible = false
+	$Overlay.visible = false
+	get_player_status(connected_wallet)
+
+
+# DEBUG
+# Overlay needs to be made invisible again
+func delete_hand():
+	if $Overlay/Restore/DeleteHand.text == "Conclude Game":
+		conclude_game()
+	elif $Overlay/Restore/DeleteHand.text == "Join Game":
+		start_game()
+
+
+
+func check_for_invite():
+	print_log("Looking for invitation...")
+	get_player_status(connected_wallet)
+
+# DEBUG
+# Multi opponent support doesn't exist yet 
+# (because TABLE_SIZE is currently a constant)
+func select_game_mode():
+	$Overlay/StartGame.visible = true
+	$Overlay.visible = true
+
+
+
+func rejoin_game():
+	pass
 
 
 
@@ -281,7 +376,7 @@ func receive_tx_receipt(tx_receipt):
 
 
 func print_log(txt):
-	$Info/Log.text += txt + "\n"
+	$Info/Log.text += "> " + txt + "\n"
 	$Info/Log.scroll_vertical = $Info/Log.get_v_scroll_bar().max_value
 
 func has_error(callback):
@@ -371,7 +466,7 @@ func get_proof_calldata(callback):
 	# Ready to send to contract
 	var data = EthersWeb.get_calldata(ABI, function_name, decoded_values)
 
-	var _callback = EthersWeb.create_callback(self, "await_transaction")
+	var _callback = EthersWeb.create_callback(self, "await_transaction", {"tx_type": "ZK_PROOF"})
 	# DEBUG
 	# Will probably split this part into a separate function
 	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data, "0", null, _callback)
@@ -382,12 +477,51 @@ func get_proof_calldata(callback):
 
 
 # DEBUG
-# Needs to resolve based on tx type
 func await_transaction(callback):
+	var tx_type = ""
+	if "tx_type" in callback.keys():
+		tx_type = callback["tx_type"]
+	
+	var remove = true
+	
+	# SUCCESSFUL TX
 	if "result" in callback.keys():
-		print_log("Transaction Sent")
+		print_log("Transaction Sent\nWaiting...")
+		# DEBUG
+		match tx_type:
+			"GET_HAND_VRF":
+				pass
+			"START_GAME":
+				pass
+			"INITIATE_SWAP":
+				pass
+		
+		
+	# FAILED TX
 	elif "error_message" in callback.keys():
-		print_log("Transaction Rejected")
+		var error = callback["error_code"]
+		
+		# USER REJECTED
+		if error == "ACTION_REJECTED":
+			print_log("Transaction Rejected")
+			match tx_type:
+				"CONCLUDE_GAME":
+					remove = false
+		
+		# RPC REJECTED
+		if error == "CALL_EXCEPTION":
+			print_log("Transaction Failed")
+			match tx_type:
+				"WITHDRAW":
+					if player_status["game_id"] != "0":
+						print_log("Cannot withdraw tokens during a game")
+				
+				"CONCLUDE_GAME":
+					remove = false
+					print_log("Game time limit has not elapsed")
+			
+	if remove:
+		remove_overlay()
 	
 	
 	
@@ -478,8 +612,9 @@ func buy_seed():
 	
 	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "buyHandSeed", [connected_wallet, SEPOLIA_GAME_TOKEN_ADDRESS, ante])
 	
+	var _callback = EthersWeb.create_callback(self, "await_transaction", {"tx_type": "GET_HAND_VRF"})
 	# Gas limit must be specified because ethers.js will underestimate
-	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "260000")
+	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "260000", _callback)
 
 
 
@@ -598,7 +733,9 @@ func start_game():
 		[connected_wallet]
 	]
 	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "startGame", params)
-	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "380000")
+	var _callback = EthersWeb.create_callback(self, "await_transaction", {"tx_type": "START_GAME"})
+	
+	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "380000", _callback)
 	
 	# DEBUG 
 	# NOTE
@@ -612,12 +749,16 @@ func raise():
 	# player would pass their own amount here
 	var amount = "100"
 	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "raise", [SEPOLIA_GAME_TOKEN_ADDRESS, amount])
-	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data)
+	
+	var _callback = EthersWeb.create_callback(self, "await_transaction", {"tx_type": "RAISE"})
+	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data, "0", null, _callback)
 
 
 func fold():
 	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "fold", [SEPOLIA_GAME_TOKEN_ADDRESS])
-	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data)
+	
+	var _callback = EthersWeb.create_callback(self, "await_transaction", {"tx_type": "FOLD"})
+	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data, "0", null, _callback)
 
 
 func swap_cards():
@@ -635,7 +776,9 @@ func swap_cards():
 	var poseidon_hash = poseidon([indices[0], indices[1], nullifier])
 	
 	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "swapCards", [SEPOLIA_GAME_TOKEN_ADDRESS, poseidon_hash])
-	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "260000")
+	
+	var _callback = EthersWeb.create_callback(self, "await_transaction", {"tx_type": "INITIATE_SWAP"})
+	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "260000", _callback)
 
 
 #To prove the swap, we need these inputs:
@@ -773,11 +916,12 @@ func prove_play_cards():
 
 func conclude_game():
 	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "concludeGame", [player_status["game_id"]])
-	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data)
+	
+	var _callback = EthersWeb.create_callback(self, "await_transaction", {"tx_type": "CONCLUDE_GAME"})
+	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data, "0", null, _callback)
 
 
-func rejoin_game():
-	pass
+
 
 
 
@@ -787,7 +931,8 @@ func mint_and_deposit():
 	var deposit_contract = SEPOLIA_GAME_LOGIC_ADDRESS
 	var data = EthersWeb.get_calldata(GAME_TOKEN_ABI, "mintAndDeposit", [connected_wallet, deposit_contract])
 	
-	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_TOKEN_ADDRESS, data, "0.0001", "220000")
+	var _callback = EthersWeb.create_callback(self, "await_transaction", {"tx_type": "DEPOSIT"})
+	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_TOKEN_ADDRESS, data, "0.0001", "220000", _callback)
 
 
 func withdraw_eth():
@@ -796,7 +941,9 @@ func withdraw_eth():
 		return
 	
 	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "withdrawGameToken", [SEPOLIA_GAME_TOKEN_ADDRESS])
-	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data)
+	
+	var _callback = EthersWeb.create_callback(self, "await_transaction", {"tx_type": "WITHDRAW"})
+	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data, "0", null, _callback)
 
 
 
@@ -2566,6 +2713,7 @@ func reset_prompts():
 		prompt_button.modulate.a = 0
 		prompt_button.visible = false
 
+
 func fadein_button(_button):
 	_button.visible = true
 	fade("IN", _button)
@@ -2574,3 +2722,8 @@ func copy_text(source):
 	var text_to_copy = source.text
 	var js_code = "navigator.clipboard.writeText(%s);" % JSON.stringify(text_to_copy)
 	JavaScriptBridge.eval(js_code)
+
+func remove_overlay():
+	for submenu in $Overlay.get_children():
+		submenu.visible = false
+	$Overlay.visible = false
