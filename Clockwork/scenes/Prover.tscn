@@ -1,6 +1,29 @@
-[gd_scene load_steps=2 format=3 uid="uid://cfevpxhpsvbst"]
+[gd_scene load_steps=8 format=3 uid="uid://cfevpxhpsvbst"]
 
 [ext_resource type="Script" uid="uid://cmrmqtbij7m65" path="res://scripts/Prover.gd" id="1_g0qil"]
+[ext_resource type="Script" uid="uid://blus6df28kgul" path="res://scripts/rotate.gd" id="2_vqeix"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_h31i6"]
+
+[sub_resource type="Sky" id="Sky_efcvw"]
+sky_material = SubResource("ProceduralSkyMaterial_h31i6")
+
+[sub_resource type="Environment" id="Environment_f08va"]
+background_mode = 1
+sky = SubResource("Sky_efcvw")
+tonemap_mode = 3
+glow_enabled = true
+glow_blend_mode = 1
+fog_enabled = true
+fog_light_color = Color(0.549972, 0.527476, 0.681132, 1)
+fog_light_energy = 0.1
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_g0qil"]
+albedo_color = Color(0.137255, 0.45098, 1, 1)
+roughness = 0.1
+
+[sub_resource type="BoxMesh" id="BoxMesh_vqeix"]
+material = SubResource("StandardMaterial3D_g0qil")
 
 [node name="Prover" type="Control"]
 layout_mode = 3
@@ -12,6 +35,7 @@ grow_vertical = 2
 script = ExtResource("1_g0qil")
 
 [node name="Background" type="ColorRect" parent="."]
+visible = false
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -174,3 +198,21 @@ offset_right = 903.0
 offset_bottom = 630.0
 editable = false
 wrap_mode = 1
+
+[node name="World" type="Node3D" parent="."]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="World"]
+environment = SubResource("Environment_f08va")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="World"]
+
+[node name="Camera3D" type="Camera3D" parent="World"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.752465, -0.421833)
+
+[node name="Pivot" type="Node3D" parent="World"]
+transform = Transform3D(1, 0, 0, 0, 0.994432, -0.105379, 0, 0.105379, 0.994432, 0, 0, -5.1296)
+
+[node name="Cube" type="MeshInstance3D" parent="World/Pivot"]
+transform = Transform3D(1, 0, 0, 0, 0.997577, -0.069565, 0, 0.069565, 0.997577, 0, -0.498377, -4.70305)
+mesh = SubResource("BoxMesh_vqeix")
+script = ExtResource("2_vqeix")

@@ -59,6 +59,18 @@ window.walletBridge = {
 
   },
 
+  
+  poll_accounts: async function(success, failure, callback) {
+    try {
+      account_list = await window.ethereum.request({ method: 'eth_accounts' })
+      success(callback, account_list[0])
+      }
+      catch (_error) { 
+        console.error(_error); 
+        failure(callback, _error.code, _error.message)
+      }
+  },
+
 
 	request_accounts: async function(success, failure, callback) {
     try {
@@ -265,7 +277,7 @@ window.walletBridge = {
 
   // CONTRACT WRITE 
 
-  initiateContractCall: async function(_chainId, contract_address, calldata, valueEth, success, failure, receiptCallback, callback) {
+  initiateContractCall: async function(_chainId, contract_address, calldata, valueEth, gasLimitOverride, success, failure, receiptCallback, callback) {
     
     try {
 
@@ -277,7 +289,7 @@ window.walletBridge = {
       var provider = new window.ethers.BrowserProvider(window.ethereum);
 
       var signer = await provider.getSigner();
-      this.callContractFunction(signer, contract_address, calldata, valueEth, success, failure, receiptCallback, callback) 
+      this.callContractFunction(signer, contract_address, calldata, valueEth, gasLimitOverride, success, failure, receiptCallback, callback) 
           } 
 		
     catch (_error) { 

@@ -4,7 +4,12 @@ extends Control
 @onready var window = EthersWeb.window
 
 var connected_wallet
+var player_status = {}
+
+
 var listening = false
+var connect_button_position = Vector2(50,25)
+var prompt_connect = true
 
 ## ZK 
 
@@ -37,7 +42,9 @@ var playCards_zk_circuit = "res://zk/playCards.wasm"
 var playCards_zk_proving_key = "res://zk/playCards_final.zkey"
 var playCards_witness_calculator_filepath = "res://js/playCards_witness_calculator.js"
 
+
 func _ready():
+	fade("OUT", $Curtain)
 	connect_buttons()
 	load_and_attach(snarkjs_filepath)
 	
@@ -49,70 +56,151 @@ func _ready():
 	
 	load_and_attach(js_crypto_filepath)
 	load_and_attach(zk_bridge_filepath)
-	
-	# DEBUG
-	# Decode error messages by comparing them to keccak hashes of errors
-	#print(window.walletBridge.getFunctionSelector("InvalidHash()"))
-	
-	#0x0af806e0
 
 
 func connect_buttons():
 	$ConnectWallet.connect("pressed", connect_wallet)
-	$WalletInfo.connect("pressed", get_wallet_info)
-
-	$ProveHand.connect("pressed", get_hand_zk_proof)
+	$Info/BuyTokens.connect("pressed", mint_and_deposit)
+	$Info/WithdrawETH.connect("pressed", withdraw_eth)
 	
-	$BuySeed.connect("pressed", buy_seed)
-	$GetHandSeed.connect("pressed", get_vrf_seed)
+	$Prompt/BuySeed.connect("pressed", buy_seed)
+	$Prompt/GetHand.connect("pressed", get_hand_zk_proof)
 	
-	$MintAndDeposit.connect("pressed", mint_and_deposit)
-	$WithdrawETH.connect("pressed", withdraw_eth)
-	
-	$StartGame.connect("pressed", start_game)
-	$Raise.connect("pressed", raise)
-	$SwapCards.connect("pressed", swap_cards)
-	$Fold.connect("pressed", fold)
-	$ConcludeGame.connect("pressed", conclude_game)
-	
-	$GetObjectiveSeed.connect("pressed", game_info)
-	$GetVRFSwapSeed.connect("pressed", get_vrf_swap_seed)
-	$ProveSwap.connect("pressed", prove_swap)
-	$PlayCards.connect("pressed", prove_play_cards)
-	
-
 	EthersWeb.register_transaction_log(self, "receive_tx_receipt")
 
 
-
 func connect_wallet():
-	var callback = EthersWeb.create_callback(self, "got_account_list")
-	EthersWeb.connect_wallet(callback)
+	if EthersWeb.has_wallet:
+		var callback = EthersWeb.create_callback(self, "got_account_list")
+		EthersWeb.connect_wallet(callback)
 
 
 func got_account_list(callback):
-	if has_error(callback):
-		return
+	if callback["result"]:
+		connected_wallet = callback["result"][0]
+		prompt_connect = false
+		fade("OUT", $ConnectWallet, move_connect_button)
+		fade("OUT", $Title, move_connect_button)
+		fade("IN", $Info, fade.bind("IN", $Prompt))
+		get_player_status(connected_wallet)
+		get_token_balance(connected_wallet)
+
+
+# Check for disconnections or account switches
+var poll_timer = 1.5
+func _process(delta):
+	if connected_wallet:
+		poll_timer -= delta
+		if poll_timer < 0:
+			var callback = EthersWeb.create_callback(self, "polled_accounts")
+			EthersWeb.poll_accounts(callback)
+			poll_timer = 1.5
+
+
+func polled_accounts(callback):
+	if !callback["result"]:
+		if !prompt_connect:
+			prompt_connect = true
+			fade("IN", $ConnectWallet)
+			$Info/TokenBalance.text = ""
+	
+	else:
+		var wallet = callback["result"]
+		if connected_wallet != wallet:
+			get_player_status(wallet)
+			get_token_balance(wallet)
+		connected_wallet = wallet
 		
-	connected_wallet = callback["result"][0]
-	print_log(connected_wallet + " Connected")
+		if prompt_connect:
+			prompt_connect = false
+			fade("OUT", $ConnectWallet)
+
+
+
+
+func get_player_status(player_address):
+	var callback = EthersWeb.create_callback(self, "received_player_status")
+
+	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "tokenPlayerStatus", [player_address, SEPOLIA_GAME_TOKEN_ADDRESS]) 
+	
+	EthersWeb.read_from_contract(
+		"Ethereum Sepolia",
+		SEPOLIA_GAME_LOGIC_ADDRESS, 
+		data,
+		callback
+		)
+		
+	print_log("Retrieving player info...")
+
+
+func get_token_balance(player_address):
+	var callback = EthersWeb.create_callback(self, "received_token_balance")
+
+	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "depositBalance", [player_address, SEPOLIA_GAME_TOKEN_ADDRESS]) 
+	
+	EthersWeb.read_from_contract(
+		"Ethereum Sepolia",
+		SEPOLIA_GAME_LOGIC_ADDRESS, 
+		data,
+		callback
+		)
+	
+	print_log("Getting balance for " + player_address)
+
+func received_token_balance(callback):
+	if callback["result"]:
+		player_status["token_balance"] = callback["result"][0]
+		$Info/TokenBalance.text = "Token Balance: " + player_status["token_balance"]
+	else:
+		$Info/TokenBalance.text = ""
+		check_rpc()
+
+
+func received_player_status(callback):
+	if callback["result"]:
+		player_status["vrf_seed"] = callback["result"][0]
+		player_status["hand_hash"] = callback["result"][2]
+		player_status["game_id"] = callback["result"][3]
+		player_status["player_index"] = callback["result"][4]
+		player_status["total_bid_amount"] = callback["result"][5]
+		player_status["has_requested_seed"] = callback["result"][6]
+		
+		
+		if player_status["game_id"] != "0":
+			prompt_rejoin_game()
+		elif player_status["hand_hash"] != "0":
+			prompt_create_game()
+		elif player_status["vrf_seed"] != "0":
+			prompt_prove_hand()
+		else:
+			prompt_buy_seed()
+			
+	else:
+		check_rpc()
+
+
+
+
+
+
+func prompt_buy_seed():
+	print_log("Seed not found")
+	fade("IN", $Prompt/BuySeed)
+
+
+func prompt_prove_hand():
+	print_log("Hand not found")
+	fade("IN", $Prompt/GetHand)
 	
 
-func get_wallet_info():
-	var callback = EthersWeb.create_callback(self, "show_wallet_info")
-	EthersWeb.get_connected_wallet_info(callback)
+func prompt_create_game():
+	print_log("Game ID not found")
 
 
-func show_wallet_info(callback):
-	if has_error(callback):
-		return
-		
-	var info =  callback["result"]
-	
-	var txt = "Address " + info["address"] + "\n"
-	txt += "ChainID " + info["chainId"] + "\n"
-	txt += "Gas Balance " + info["balance"]
-	print_log(txt)
+func prompt_rejoin_game():
+	print_log("Game ID found.  Rejoin?")
+
+
 
 
 func receive_tx_receipt(tx_receipt):
@@ -126,18 +214,22 @@ func receive_tx_receipt(tx_receipt):
 		var blockNumber = str(tx_receipt["blockNumber"])
 		txt += "\nIncluded in block " + blockNumber
 	
-	print_log(txt)
+	get_token_balance(connected_wallet)
+	#print_log(txt)
 
 
 func print_log(txt):
-	$Log.text += txt + "\n___________________________________\n"
-	$Log.scroll_vertical = $Log.get_v_scroll_bar().max_value
+	$Info/Log.text += txt + "\n"
+	$Info/Log.scroll_vertical = $Info/Log.get_v_scroll_bar().max_value
 
 func has_error(callback):
 	if "error_code" in callback.keys():
 		var txt = "Error " + str(callback["error_code"]) + ": " + callback["error_message"]
 		print_log(txt)
 		return true
+
+func check_rpc():
+	print_log("No response from chain, check RPC.")
 
 
 
@@ -220,17 +312,19 @@ func get_proof_calldata(callback):
 	var _callback = EthersWeb.create_callback(self, "await_transaction")
 	# DEBUG
 	# Will probably split this part into a separate function
-	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_CONTRACT_ADDRESS, data, _callback)
+	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data, "0", null, _callback)
 	
-	print_log("PROOF VALUES:\n" + str(decoded_values) + "\n\n")
+	print_log("ZKP Generated")
+	#print_log("PROOF VALUES:\n" + str(decoded_values) + "\n\n")
 	
-	
+
+
 # DEBUG
 # Put custom logic here
 func await_transaction(callback):
-	if callback["result"]:
+	if "result" in callback.keys():
 		print_log("Transaction Sent")
-	elif callback["error"]:
+	elif "error_message" in callback.keys():
 		print_log("Transaction Rejected")
 	
 	
@@ -288,7 +382,7 @@ func load_bytes(path: String) -> PackedByteArray:
 ### GAME VARIABLES
 
 # Game Logic
-var SEPOLIA_GAME_CONTRACT_ADDRESS = "0x5507ea3aAB6c1EF18B1AE24f29e6D207CE64905b"
+var SEPOLIA_GAME_LOGIC_ADDRESS = "0x5507ea3aAB6c1EF18B1AE24f29e6D207CE64905b"
 
 # Token
 var SEPOLIA_GAME_TOKEN_ADDRESS = "0x9acF3472557482091Fe76c2D08F82819Ab9a28eb"
@@ -301,7 +395,6 @@ var hand_size = 5
 var ante = "100"
 var maximum_spend = "1000"
 
-var vrf_seed
 var vrf_swap_seed
 var hand = {}
 var discarded_cards
@@ -310,10 +403,7 @@ var discarded_cards
 # Add a way to pull this from the chain instead of setting it manually here
 var game_id = 2
 
-# DEBUG "get vrf seed" actually just pulls all the player info, can be used
-# to get game id
-# similarly can do the same with gameSessions
-var player_info
+
 
 
 
@@ -324,21 +414,21 @@ func buy_seed():
 		print_log("Please connect your wallet")
 		return
 	
-	var data = EthersWeb.get_calldata(GAME_CONTRACT_ABI, "buyHandSeed", [connected_wallet, SEPOLIA_GAME_TOKEN_ADDRESS, ante])
+	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "buyHandSeed", [connected_wallet, SEPOLIA_GAME_TOKEN_ADDRESS, ante])
 	
 	# Gas limit must be specified because ethers.js will underestimate
-	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_CONTRACT_ADDRESS, data, "0.002", "260000")
+	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "260000")
 
 
 
 func get_vrf_seed():
 	var callback = EthersWeb.create_callback(self, "got_vrf_seed")
 
-	var data = EthersWeb.get_calldata(GAME_CONTRACT_ABI, "tokenPlayerStatus", [connected_wallet, SEPOLIA_GAME_TOKEN_ADDRESS]) 
+	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "tokenPlayerStatus", [connected_wallet, SEPOLIA_GAME_TOKEN_ADDRESS]) 
 	
 	EthersWeb.read_from_contract(
 		"Ethereum Sepolia",
-		SEPOLIA_GAME_CONTRACT_ADDRESS, 
+		SEPOLIA_GAME_LOGIC_ADDRESS, 
 		data,
 		callback
 		)
@@ -356,8 +446,8 @@ func got_vrf_seed(callback):
 	#[5] totalBidAmount
 	#[6] hasRequestedSeed
 	
-	vrf_seed = callback["result"][0]
-	print_log("VRF Seed: " + vrf_seed)
+	player_status["vrf_seed"] = callback["result"][0]
+	print_log("VRF Seed: " + player_status["vrf_seed"])
 	
 	var _game_id = callback["result"][3]
 	# DEBUG
@@ -368,11 +458,11 @@ func got_vrf_seed(callback):
 func game_info():
 	var callback = EthersWeb.create_callback(self, "got_game_info")
 
-	var data = EthersWeb.get_calldata(GAME_CONTRACT_ABI, "gameSessions", [game_id]) 
+	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "gameSessions", [game_id]) 
 	
 	EthersWeb.read_from_contract(
 		"Ethereum Sepolia",
-		SEPOLIA_GAME_CONTRACT_ADDRESS, 
+		SEPOLIA_GAME_LOGIC_ADDRESS, 
 		data,
 		callback
 		)
@@ -402,11 +492,11 @@ func got_game_info(callback):
 func get_vrf_swap_seed():
 	var callback = EthersWeb.create_callback(self, "got_vrf_swap_seed")
 
-	var data = EthersWeb.get_calldata(GAME_CONTRACT_ABI, "getVRFSwapSeed", [connected_wallet, SEPOLIA_GAME_TOKEN_ADDRESS]) 
+	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "getVRFSwapSeed", [connected_wallet, SEPOLIA_GAME_TOKEN_ADDRESS]) 
 	
 	EthersWeb.read_from_contract(
 		"Ethereum Sepolia",
-		SEPOLIA_GAME_CONTRACT_ADDRESS, 
+		SEPOLIA_GAME_LOGIC_ADDRESS, 
 		data,
 		callback
 		)
@@ -426,15 +516,17 @@ func get_hand_zk_proof():
 		print_log("Please connect your wallet")
 		return
 	
-	if !vrf_seed:
+	if !player_status["vrf_seed"]:
 		print_log("Please get the current seed")
 		return
+	
+	print_log("Generating ZKP to prove hand...")
 		
 	# Parameter names must match circuit inputs' names
 	var inputs = {   
 	# Must come from the smart contract (will be validated on-chain 
 	# using the public input)
-	"vrfSeed": vrf_seed,
+	"vrfSeed": player_status["vrf_seed"],
 	
 	# Selected from the set of local seeds, preferably chosen because it 
 	# generates the hand containing the most preferred cards
@@ -477,8 +569,8 @@ func start_game():
 		# [TABLE_SIZE] players, i.e. 4 players
 		[connected_wallet]
 	]
-	var data = EthersWeb.get_calldata(GAME_CONTRACT_ABI, "startGame", params)
-	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_CONTRACT_ADDRESS, data, "0.002", "380000")
+	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "startGame", params)
+	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "380000")
 	
 	# DEBUG 
 	# NOTE
@@ -491,13 +583,13 @@ func raise():
 	# DEBUG
 	# player would pass their own amount here
 	var amount = "100"
-	var data = EthersWeb.get_calldata(GAME_CONTRACT_ABI, "raise", [SEPOLIA_GAME_TOKEN_ADDRESS, amount])
-	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_CONTRACT_ADDRESS, data)
+	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "raise", [SEPOLIA_GAME_TOKEN_ADDRESS, amount])
+	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data)
 
 
 func fold():
-	var data = EthersWeb.get_calldata(GAME_CONTRACT_ABI, "fold", [SEPOLIA_GAME_TOKEN_ADDRESS])
-	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_CONTRACT_ADDRESS, data)
+	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "fold", [SEPOLIA_GAME_TOKEN_ADDRESS])
+	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data)
 
 
 func swap_cards():
@@ -514,8 +606,8 @@ func swap_cards():
 	
 	var poseidon_hash = poseidon([indices[0], indices[1], nullifier])
 	
-	var data = EthersWeb.get_calldata(GAME_CONTRACT_ABI, "swapCards", [SEPOLIA_GAME_TOKEN_ADDRESS, poseidon_hash])
-	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_CONTRACT_ADDRESS, data, "0.002", "260000")
+	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "swapCards", [SEPOLIA_GAME_TOKEN_ADDRESS, poseidon_hash])
+	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "260000")
 
 
 #To prove the swap, we need these inputs:
@@ -655,8 +747,8 @@ func conclude_game():
 	# DEBUG
 	# need to get the gameId 
 	
-	var data = EthersWeb.get_calldata(GAME_CONTRACT_ABI, "concludeGame", [game_id])
-	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_CONTRACT_ADDRESS, data)
+	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "concludeGame", [game_id])
+	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data)
 
 
 
@@ -664,12 +756,9 @@ func conclude_game():
 ## TOKEN MANAGEMENT
 
 func mint_and_deposit():
-	if !connected_wallet:
-		print_log("Please connect your wallet")
-		return
-		
-	var deposit_contract = SEPOLIA_GAME_CONTRACT_ADDRESS
+	var deposit_contract = SEPOLIA_GAME_LOGIC_ADDRESS
 	var data = EthersWeb.get_calldata(GAME_TOKEN_ABI, "mintAndDeposit", [connected_wallet, deposit_contract])
+	
 	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_TOKEN_ADDRESS, data, "0.0001", "220000")
 
 
@@ -678,8 +767,8 @@ func withdraw_eth():
 		print_log("Please connect your wallet")
 		return
 	
-	var data = EthersWeb.get_calldata(GAME_CONTRACT_ABI, "withdrawGameToken", [SEPOLIA_GAME_TOKEN_ADDRESS])
-	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_CONTRACT_ADDRESS, data)
+	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "withdrawGameToken", [SEPOLIA_GAME_TOKEN_ADDRESS])
+	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data)
 
 
 
@@ -688,7 +777,7 @@ func withdraw_eth():
 func calculate_hands():
 	var nullifiers = generate_nullifier_set(hand_size)
 	for local_seed in local_seeds:
-		generate_hand(vrf_seed, local_seed, nullifiers)
+		generate_hand(player_status["vrf_seed"], local_seed, nullifiers)
 		
 
 # Predict hands using the set of local seeds
@@ -781,7 +870,8 @@ func predict_score(obj_attractor, obj_color, cards):
 	return score
 
 
-var GAME_CONTRACT_ABI = [
+
+var GAME_LOGIC_ABI = [
 	{
 		"inputs": [],
 		"stateMutability": "nonpayable",
@@ -1987,8 +2077,6 @@ var GAME_CONTRACT_ABI = [
 ]
 
 
-## STARMARK
-
 
 var GAME_TOKEN_ABI = [
 	{
@@ -2417,3 +2505,32 @@ var GAME_TOKEN_ABI = [
 		"type": "receive"
 	}
 ]
+
+
+
+## UI HELPERS
+
+func fade(outin, canvas, callback=null):
+	var target = 1
+	
+	# Become visible
+	if outin == "IN":
+		target = 1
+		
+	# Become invisible
+	elif outin == "OUT":
+		target = 0
+	
+	var tween = create_tween()
+	tween.tween_property(canvas, "modulate:a", target, 1)
+	if callback:
+		tween.tween_callback(callback)
+	tween.play()
+		
+
+func move_connect_button():
+	$ConnectWallet.position = connect_button_position
+
+func reset_prompts():
+	for prompt_button in $Prompt.get_children():
+		prompt_button.modulate.a = 0

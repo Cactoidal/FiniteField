@@ -54,6 +54,9 @@ func switch_chain(chain_id, success, failure, callback):
 	window.walletBridge.switch_chain(chain_id, success, failure, callback)
 
 
+func poll_accounts(callback="{}"):
+	window.walletBridge.poll_accounts(success_callback, error_callback, callback)
+
 
 ### BLOCKCHAIN INTERACTIONS AND SIGNING
 
@@ -385,7 +388,6 @@ var error_callback = JavaScriptBridge.create_callback(got_error_callback)
 
 
 func got_success_callback(args):
-	
 	var callback = JSON.parse_string(args[0])
 
 	if args.size() > 1:
