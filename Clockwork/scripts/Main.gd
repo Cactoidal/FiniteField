@@ -63,6 +63,10 @@ func _ready():
 	
 	load_and_attach(js_crypto_filepath)
 	load_and_attach(zk_bridge_filepath)
+	
+	# DEBUG
+	#print(window.walletBridge.getFunctionSelector("InvalidDiscard()"))
+	#0xb248b448
 
 
 func connect_buttons():
@@ -341,7 +345,7 @@ func restore_hand():
 	if !hand_json:
 		print_log("Invalid JSON")
 		return
-	if hand_json.keys() != ["vrf_seed", "fixed_seed", "cards", "nullifiers", "card_hashes", "hand_hash"]:
+	if hand_json.keys() != ["vrf_seed", "fixed_seed", "cards", "nullifiers", "card_hashes", "hand_hash", "vrf_swap_seed"]:
 		print_log("Invalid JSON")
 		return
 	if hand_json["hand_hash"] != player_status[connected_wallet]["hand_hash"]:
@@ -412,7 +416,12 @@ func splay_cards():
 
 
 func update_card_indices(_index):
+	if initiated_swap || player_status[connected_wallet]["hand"]["vrf_swap_seed"] != "0":
+		print_log("Already selected cards for swap")
+		return
+		
 	if _index in selected_card_indices:
+		print_log("Already selected that card")
 		return
 
 	if selected_card_indices.size() == 2:
@@ -459,7 +468,7 @@ func got_game_info(callback):
 	
 	$GameInfo/TopBid.text = "TOP BID: " + str(game_session["highBid"])
 	
-	# Initialize the vrfSwapSeed and timeElapsed.
+	# Initialize timeElapsed.
 	if !"vrfSwapSeed" in game_session:
 		game_session["vrfSwapSeed"] = 0
 		game_session["timeElapsed"] = 0
@@ -477,22 +486,32 @@ func got_game_info(callback):
 		# If the objective has been found, the game has started.
 		# If less than 2 minutes have elapsed, poll for the
 		# vrfSwapSeed.
-		if game_session["timeElapsed"] < 110:
-			if game_session["vrfSwapSeed"] == 0:
+		var vrf_swap_seed = player_status[connected_wallet]["hand"]["vrf_swap_seed"]
+		if game_session["timeElapsed"] < 120:
+			if vrf_swap_seed == "0":
 				get_vrf_swap_seed()
 			else:
-				$GameInfo/SwapWindow/SwapActuator.text = "Prove Swap"
+				if $GameInfo/SwapWindow/SwapActuator.text != "Prove Swap":
+					print_log("VRF Swap Seed received.  Now prove the swap.")
+					$GameInfo/SwapWindow/SwapActuator.text = "Prove Swap"
 		else:
-			$GameInfo/SwapWindow.visible = false
-	
-	
+			# If seed hasn't been obtained or requested during the 2 minute window,
+			# remove the option to swap
+			if vrf_swap_seed == "0" && !initiated_swap:
+				fade("OUT", $GameInfo/SwapWindow)
 	
 	
 func actuate_swap():
 		if $GameInfo/SwapWindow/SwapActuator.text == "Initiate Swap":
-			pass
+			if selected_card_indices.size() == 2:
+				print_log("Initiating swap...")
+				swap_cards()
+			else:
+				print_log("Select 2 cards")
 		elif $GameInfo/SwapWindow/SwapActuator.text == "Prove Swap":
-			pass
+			prove_swap()
+		elif $GameInfo/SwapWindow/SwapActuator.text == "Copy Hand":
+			copy_text($GameInfo/SwapWindow/HandText)
 
 	#[0] gameToken
 	#[1] startTimestamp
@@ -526,6 +545,22 @@ func receive_tx_receipt(tx_receipt):
 		
 		if tx_type in ["START_GAME", "INITIATE_SWAP"]:
 			print_log("Awaiting VRF Response...")
+		
+		if tx_type in ["ZK_PROOF"]:
+			
+			# After successfully proving the swap, update the cards
+			# and prompt the player to copy the new hand data.
+			if initiated_swap:
+				initiated_swap = false
+				$GameInfo/SwapWindow/SwapActuator.text = "Copy Hand"
+				$GameInfo/SwapWindow/HandText.text = str(player_status[connected_wallet]["hand"])
+				var index = 0
+				for card in $Cards.get_children():
+					card.num = player_status[connected_wallet]["hand"]["cards"][index]
+					card.alter_appearance()
+					index += 1
+					
+					
 		
 	
 	if status == "0":
@@ -656,7 +691,9 @@ func await_transaction(callback):
 			"START_GAME":
 				pass
 			"INITIATE_SWAP":
-				pass
+				initiated_swap = true
+				$GameInfo/SwapWindow/SwapActuator.text = "Awaiting VRF"
+				print_log("Waiting for swap seed...")
 		
 		
 	# FAILED TX
@@ -786,7 +823,6 @@ func got_vrf_swap_seed(callback):
 	
 	var vrf_swap_seed = callback["result"][0]
 	player_status[connected_wallet]["hand"]["vrf_swap_seed"] = vrf_swap_seed
-	print_log("VRF Swap Seed: " + vrf_swap_seed)
 
 
 
@@ -882,9 +918,12 @@ func fold():
 
 
 func swap_cards():
-	# DEBUG
-	# player would pass their own indices here
-	var indices = [1, 2]
+	
+	#DEBUG
+	#Make sure sort() is consistent
+	var indices = selected_card_indices
+	indices.sort()
+	
 	var nullifier = generate_nullifier_set(1)[0]
 	
 	# Cache for proving once VRF seed has returned
@@ -927,7 +966,7 @@ func prove_swap():
 	var vrf_swap_seed = hand["vrf_swap_seed"]
 	var fixed_seed = get_random_local_seed()
 	var old_cards = hand["card_hashes"]
-	var indices = [1,2]
+	var indices = selected_card_indices
 	var new_nullifiers = generate_nullifier_set(2)
 	var discard_nullifier = hand["discarded_cards"]["nullifier"]
 	
@@ -1128,7 +1167,8 @@ func generate_hand(_vrf_seed, fixed_seed, nullifiers):
 		"cards": picked_cards,
 		"nullifiers": nullifiers,
 		"card_hashes": card_hashes,
-		"hand_hash": hand_hash
+		"hand_hash": hand_hash,
+		"vrf_swap_seed": "0"
 	}
 	
 	return hand
@@ -1212,6 +1252,7 @@ var in_game = false
 var GAME_STATE = ""
 var got_game_objective = false
 var selected_card_indices = []
+var initiated_swap = false
 
 
 func fade(outin, canvas, callback=null):
@@ -1274,7 +1315,9 @@ func reset_game_ui():
 	$GameInfo/Time.visible = false
 	$GameInfo/TopBid.text = "TOP BID: 0"
 	$GameInfo/SwapWindow/SwapActuator.text = "Initiate Swap"
-	$GameInfo/SwapWindow.visible = true
+	$GameInfo/SwapWindow/HandText.text = ""
+	$GameInfo/SwapWindow.modulate.a = 1
+	
 	for card in $Cards.get_children():
 		card.queue_free()
 	selected_card_indices = []
@@ -1282,3 +1325,4 @@ func reset_game_ui():
 	in_game = false
 	game_session = {}
 	got_game_objective = false
+	initiated_swap = false

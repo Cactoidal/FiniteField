@@ -10,21 +10,30 @@ var main
 var index
 
 func _ready():
+	alter_appearance()
+	
+	$Color/Button.connect("pressed", select_card)
+	slide_target = position.x + x_slide
+
+	slide_out()
+
+
+func alter_appearance():
 	var display_num = num
 	if display_num > 10:
 		suit_color = Color.SILVER
 		display_num -= 10
+	else:
+		suit_color = Color.BLUE
 	
 	$Color/Number.text = str(display_num)
 	
 	$Color.color = suit_color
 	if suit_color == Color.SILVER:
 		$Color/Number.add_theme_color_override("font_color", Color.BLACK)
-	
-	$Color/Button.connect("pressed", select_card)
-	slide_target = position.x + x_slide
+	else:
+		$Color/Number.add_theme_color_override("font_color", Color.WHITE)
 
-	slide_out()
 
 func slide_out():
 	var tween = create_tween()
