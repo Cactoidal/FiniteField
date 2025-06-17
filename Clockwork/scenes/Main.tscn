@@ -570,3 +570,25 @@ offset_bottom = -45.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
+
+[node name="RevealCards" type="Button" parent="."]
+visible = false
+modulate = Color(1, 1, 1, 0)
+layout_mode = 0
+offset_left = 97.0
+offset_top = 500.0
+offset_right = 230.0
+offset_bottom = 538.0
+mouse_default_cursor_shape = 2
+text = "Reveal Cards"
+
+[node name="ConcludeGame" type="Button" parent="."]
+visible = false
+modulate = Color(1, 1, 1, 0)
+layout_mode = 0
+offset_left = 97.0
+offset_top = 500.0
+offset_right = 230.0
+offset_bottom = 538.0
+mouse_default_cursor_shape = 2
+text = "Reveal Cards"

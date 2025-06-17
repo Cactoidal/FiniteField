@@ -87,6 +87,9 @@ func connect_buttons():
 	$GameInfo/Fold.connect("pressed", fold)
 	$GameInfo/SwapWindow/SwapActuator.connect("pressed", actuate_swap)
 	
+	$RevealCards.connect("pressed", prove_play_cards)
+	$ConcludeGame.connect("pressed", conclude_game)
+	
 	
 func connect_wallet():
 	if EthersWeb.has_wallet:
@@ -469,8 +472,7 @@ func got_game_info(callback):
 	$GameInfo/TopBid.text = "TOP BID: " + str(game_session["highBid"])
 	
 	# Initialize timeElapsed.
-	if !"vrfSwapSeed" in game_session:
-		game_session["vrfSwapSeed"] = 0
+	if !"timeElapsed" in game_session:
 		game_session["timeElapsed"] = 0
  	
 	# Check the time remaining.
@@ -487,31 +489,57 @@ func got_game_info(callback):
 		# If less than 2 minutes have elapsed, poll for the
 		# vrfSwapSeed.
 		var vrf_swap_seed = player_status[connected_wallet]["hand"]["vrf_swap_seed"]
-		if game_session["timeElapsed"] < 120:
-			if vrf_swap_seed == "0":
-				get_vrf_swap_seed()
+		if vrf_swap_seed == "0":
+			if game_session["timeElapsed"] > 120:
+				if !initiated_swap:
+					# If seed hasn't been obtained or requested during the 2 minute window,
+					# remove the option to swap
+					fade("OUT", $GameInfo/SwapWindow)
+				else:
+					get_vrf_swap_seed()
 			else:
-				if $GameInfo/SwapWindow/SwapActuator.text != "Prove Swap":
-					print_log("VRF Swap Seed received.  Now prove the swap.")
-					$GameInfo/SwapWindow/SwapActuator.text = "Prove Swap"
-		else:
-			# If seed hasn't been obtained or requested during the 2 minute window,
-			# remove the option to swap
-			if vrf_swap_seed == "0" && !initiated_swap:
-				fade("OUT", $GameInfo/SwapWindow)
+				get_vrf_swap_seed()
+
+
+func get_vrf_swap_seed():
+	var callback = EthersWeb.create_callback(self, "got_vrf_swap_seed")
+
+	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "getVRFSwapSeed", [connected_wallet, SEPOLIA_GAME_TOKEN_ADDRESS]) 
 	
+	EthersWeb.read_from_contract(
+		"Ethereum Sepolia",
+		SEPOLIA_GAME_LOGIC_ADDRESS, 
+		data,
+		callback
+		)
+
+func got_vrf_swap_seed(callback):
+	if has_error(callback):
+		return
+	
+	var vrf_swap_seed = callback["result"][0]
+	player_status[connected_wallet]["hand"]["vrf_swap_seed"] = vrf_swap_seed
+	
+	if vrf_swap_seed != "0":
+		if $GameInfo/SwapWindow/SwapActuator.text != "Finish Swap":
+			print_log("VRF Swap Seed received.  Now prove the swap.")
+			$GameInfo/SwapWindow/SwapActuator.text = "Finish Swap"
+			#DEBUG
+			prove_swap()
+
 	
 func actuate_swap():
-		if $GameInfo/SwapWindow/SwapActuator.text == "Initiate Swap":
-			if selected_card_indices.size() == 2:
-				print_log("Initiating swap...")
-				swap_cards()
-			else:
-				print_log("Select 2 cards")
-		elif $GameInfo/SwapWindow/SwapActuator.text == "Prove Swap":
-			prove_swap()
-		elif $GameInfo/SwapWindow/SwapActuator.text == "Copy Hand":
-			copy_text($GameInfo/SwapWindow/HandText)
+	
+	if $GameInfo/SwapWindow/SwapActuator.text == "Initiate Swap":
+		if selected_card_indices.size() == 2:
+			print_log("Initiating swap...")
+			swap_cards()
+		else:
+			print_log("Select 2 cards")
+	elif $GameInfo/SwapWindow/SwapActuator.text == "Prove Swap":
+		prove_swap()
+	elif $GameInfo/SwapWindow/SwapActuator.text == "Copy Hand":
+		copy_text($GameInfo/SwapWindow/HandText)
 
 	#[0] gameToken
 	#[1] startTimestamp
@@ -802,28 +830,6 @@ func buy_seed():
 	var _callback = EthersWeb.create_callback(self, "await_transaction", {"tx_type": "GET_HAND_VRF"})
 	# Gas limit must be specified because ethers.js will underestimate
 	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "260000", _callback)
-
-
-
-func get_vrf_swap_seed():
-	var callback = EthersWeb.create_callback(self, "got_vrf_swap_seed")
-
-	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "getVRFSwapSeed", [connected_wallet, SEPOLIA_GAME_TOKEN_ADDRESS]) 
-	
-	EthersWeb.read_from_contract(
-		"Ethereum Sepolia",
-		SEPOLIA_GAME_LOGIC_ADDRESS, 
-		data,
-		callback
-		)
-
-func got_vrf_swap_seed(callback):
-	if has_error(callback):
-		return
-	
-	var vrf_swap_seed = callback["result"][0]
-	player_status[connected_wallet]["hand"]["vrf_swap_seed"] = vrf_swap_seed
-
 
 
 
@@ -1236,8 +1242,27 @@ func got_timestamp(callback):
 	
 	$GameInfo/Time.visible = true
 	$GameInfo/Time.text = "TIME REMAINING: " + str(time_remaining)
+	
+	if time_elapsed > 240 && !entered_prove_phase:
+		entered_prove_phase = true
+		end_play_phase()
+	
+	if time_elapsed > 900 && !entered_conclusion_phase:
+		entered_conclusion_phase = true
+		conclusion_phase()
 
 
+func end_play_phase():
+	$RevealCards.visible = true
+	fade("OUT", $GameInfo, fade.bind("IN", $RevealCards))
+
+func conclusion_phase():
+	$GameInfo.visible = false
+	$RevealCards.visible = false
+	$ConcludeGame.visible = true
+	fade("IN", $ConcludeGame)
+	# DEBUG
+	# Conclusion buton
 
 
 ## UI HELPERS
@@ -1253,6 +1278,8 @@ var GAME_STATE = ""
 var got_game_objective = false
 var selected_card_indices = []
 var initiated_swap = false
+var entered_prove_phase = false
+var entered_conclusion_phase = false
 
 
 func fade(outin, canvas, callback=null):
@@ -1317,6 +1344,11 @@ func reset_game_ui():
 	$GameInfo/SwapWindow/SwapActuator.text = "Initiate Swap"
 	$GameInfo/SwapWindow/HandText.text = ""
 	$GameInfo/SwapWindow.modulate.a = 1
+	$RevealCards.modulate.a = 0
+	$ConcludeGame.modulate.a = 0
+	$RevealCards.visible = false
+	$ConcludeGame.visible = false
+
 	
 	for card in $Cards.get_children():
 		card.queue_free()
@@ -1326,3 +1358,5 @@ func reset_game_ui():
 	game_session = {}
 	got_game_objective = false
 	initiated_swap = false
+	entered_prove_phase = false
+	entered_conclusion_phase = false
