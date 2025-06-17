@@ -420,6 +420,12 @@ func got_error_callback(args):
 
 func got_tx_callback(args):
 	var tx_receipt = args[0]
+	
+	var callback_args = JSON.parse_string(args[1])
+	if callback_args:
+		for key in callback_args.keys():
+			tx_receipt[key] = callback_args[key]
+	
 	transmit_transaction_object(tx_receipt)
 
 func got_event_callback(event):

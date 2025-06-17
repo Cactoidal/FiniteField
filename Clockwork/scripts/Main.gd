@@ -10,7 +10,9 @@ var connected_wallet
 # Player statuses are mapped to wallet addresses as they are detected
 var player_status = {}
 
+var game_session = {}
 
+@onready var card_scene = preload("res://scenes/Card.tscn")
 
 ## ZK 
 
@@ -79,10 +81,9 @@ func connect_buttons():
 	
 	$GameInfo/Raise.connect("pressed", raise)
 	$GameInfo/Fold.connect("pressed", fold)
+	$GameInfo/SwapWindow/SwapActuator.connect("pressed", actuate_swap)
 	
 	
-
-
 func connect_wallet():
 	if EthersWeb.has_wallet:
 		var callback = EthersWeb.create_callback(self, "got_account_list")
@@ -111,6 +112,7 @@ func got_account_list(callback):
 # Check for disconnections or account switches
 var poll_timer = 1.5
 var status_poll_timer = 4
+var game_poll_timer = 4
 func _process(delta):
 	if connected_wallet:
 		
@@ -119,11 +121,16 @@ func _process(delta):
 		# Only poll the player status while in the pregame state
 		if !in_game:
 			status_poll_timer -= delta
+		else:
+			game_poll_timer -= delta
 		
 		if poll_timer < 0:
 			var callback = EthersWeb.create_callback(self, "polled_accounts")
 			EthersWeb.poll_accounts(callback)
 			poll_timer = 1.5
+		
+		if game_poll_timer < 0:
+			get_game_session(player_status[connected_wallet]["game_id"])
 
 
 
@@ -214,7 +221,6 @@ func received_player_status(callback):
 		wallet["total_bid_amount"] = callback["result"][5]
 		wallet["has_requested_seed"] = callback["result"][6]
 		
-		
 		if wallet["game_id"] != "0":
 			if !in_game:
 				handle_pregame()
@@ -231,26 +237,27 @@ func received_player_status(callback):
 
 
 func handle_pregame():
-	var hand = player_status[connected_wallet]["hand"]
+	var wallet = player_status[connected_wallet]
+	var hand = wallet["hand"]
 	
 	var _pregame_state = ""
 			
-	if player_status["game_id"] != "0":
+	if wallet["game_id"] != "0":
 		if !"hand_hash" in hand:
 			_pregame_state = "RESTORE_HAND"
 		else:
 			_pregame_state = "JOIN_GAME"
 				
-	elif player_status["hand_hash"] != "0":
+	elif wallet["hand_hash"] != "0":
 		if !"hand_hash" in hand:
 			_pregame_state = "RESTORE_HAND"
 		else:
 			_pregame_state = "CREATE_GAME"
 				
-	elif player_status["vrf_seed"] != "0":
+	elif wallet["vrf_seed"] != "0":
 		_pregame_state = "PROVE_HAND"
 			
-	elif player_status["has_requested_seed"]:
+	elif wallet["has_requested_seed"]:
 		_pregame_state = "WAIT_FOR_SEED"
 		
 	else:
@@ -311,7 +318,7 @@ func prompt_join_game():
 
 func get_hand():
 	if must_copy_hand:
-		var hand = generate_hand(player_status["vrf_seed"], get_random_local_seed(), generate_nullifier_set(hand_size))
+		var hand = generate_hand(player_status[connected_wallet]["vrf_seed"], get_random_local_seed(), generate_nullifier_set(hand_size))
 		player_status[connected_wallet]["hand"] = hand
 		$Overlay/Warning/HandText.text = str(hand)
 		$Overlay/Warning.visible = true
@@ -329,6 +336,7 @@ func copy_hand():
 
 func restore_hand():
 	var hand_text = $Overlay/Restore/RestoreText.text
+
 	var hand_json = JSON.parse_string(hand_text)
 	if !hand_json:
 		print_log("Invalid JSON")
@@ -336,11 +344,20 @@ func restore_hand():
 	if hand_json.keys() != ["vrf_seed", "fixed_seed", "cards", "nullifiers", "card_hashes", "hand_hash"]:
 		print_log("Invalid JSON")
 		return
-	if hand_json["hand_hash"] != player_status["hand_hash"]:
+	if hand_json["hand_hash"] != player_status[connected_wallet]["hand_hash"]:
 		print_log("Hand does not match on-chain hash")
 		return
 		
 	player_status[connected_wallet]["hand"] = hand_json
+	
+	# JSON spec converts numbers to floats, turn the cards back into integers
+	var int_cards = []
+	for card in player_status[connected_wallet]["hand"]["cards"]:
+		card = int(card)
+		int_cards.push_back(card)
+	
+	player_status[connected_wallet]["hand"]["cards"] = int_cards
+	
 	$Overlay/Restore.visible = false
 	$Overlay.visible = false
 	get_player_status(connected_wallet)
@@ -368,7 +385,129 @@ func join_game():
 	in_game = true
 	$GameInfo.visible = true
 	fade("IN", $GameInfo)
+	splay_cards()
+	get_game_session(player_status[connected_wallet]["game_id"])
 
+
+
+func splay_cards():
+	var cards = player_status[connected_wallet]["hand"]["cards"]
+
+	# DEBUG
+	# Card width is 73 pixels
+	var slide_increment = 80
+	var x_slide = slide_increment
+	var index = 0
+	
+	for card in cards:
+		var new_card = card_scene.instantiate()
+		new_card.main = self
+		new_card.index = index
+		new_card.num = card
+		new_card.x_slide = x_slide
+		$Cards.add_child(new_card)
+		
+		x_slide += slide_increment
+		index += 1
+
+
+func update_card_indices(_index):
+	if _index in selected_card_indices:
+		return
+
+	if selected_card_indices.size() == 2:
+		selected_card_indices.pop_front()
+	selected_card_indices.push_back(_index)
+	
+	for card in $Cards.get_children():
+		card.deactivate_highlight()
+	
+	for index in selected_card_indices:
+		$Cards.get_children()[index].show_highlight()
+	
+	var selected_count = selected_card_indices.size()
+	
+	$GameInfo/SwapWindow/Prompt.text = "Swap Cards (" + str(selected_count) + " / 2)"
+
+
+func get_game_session(game_id):
+	game_poll_timer = 4
+	
+	var callback = EthersWeb.create_callback(self, "got_game_info")
+
+	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "gameSessions", [game_id]) 
+	
+	EthersWeb.read_from_contract(
+		"Ethereum Sepolia",
+		SEPOLIA_GAME_LOGIC_ADDRESS, 
+		data,
+		callback
+		)
+
+
+func got_game_info(callback):
+	if has_error(callback):
+		return
+	
+	game_session["gameToken"] = callback["result"][0]
+	game_session["startTimestamp"] = callback["result"][1]
+	game_session["objectiveSeed"] = callback["result"][2]
+	game_session["maximumSpend"] = callback["result"][3]
+	game_session["totalPot"] = callback["result"][4]
+	game_session["highBid"] = callback["result"][5]
+	game_session["hasConcluded"] = callback["result"][6]
+	
+	$GameInfo/TopBid.text = "TOP BID: " + str(game_session["highBid"])
+	
+	# Initialize the vrfSwapSeed and timeElapsed.
+	if !"vrfSwapSeed" in game_session:
+		game_session["vrfSwapSeed"] = 0
+		game_session["timeElapsed"] = 0
+ 	
+	# Check the time remaining.
+	if game_session["startTimestamp"] != "0":
+		get_time_limit(game_session["startTimestamp"])
+	
+	# Check for the objective.
+	if game_session["objectiveSeed"] != "0":
+		if !got_game_objective:
+			got_game_objective = true
+			print_log("Game has started")
+	
+		# If the objective has been found, the game has started.
+		# If less than 2 minutes have elapsed, poll for the
+		# vrfSwapSeed.
+		if game_session["timeElapsed"] < 110:
+			if game_session["vrfSwapSeed"] == 0:
+				get_vrf_swap_seed()
+			else:
+				$GameInfo/SwapWindow/SwapActuator.text = "Prove Swap"
+		else:
+			$GameInfo/SwapWindow.visible = false
+	
+	
+	
+	
+func actuate_swap():
+		if $GameInfo/SwapWindow/SwapActuator.text == "Initiate Swap":
+			pass
+		elif $GameInfo/SwapWindow/SwapActuator.text == "Prove Swap":
+			pass
+
+	#[0] gameToken
+	#[1] startTimestamp
+	#[2] objectiveSeed
+	#[3] maximumSpend
+	#[4] totalPot
+	#[5] highBid
+	#[6] hasConcluded
+	
+	#[7] players
+	#[8] exited
+	#[9] scores
+	#[10] vrfSwapSeeds
+	#[11] discardedCards
+	#[12] winners
 
 
 
@@ -379,9 +518,15 @@ func receive_tx_receipt(tx_receipt):
 	var tx_hash = tx_receipt["hash"]
 	var status = str(tx_receipt["status"])
 	
+	var tx_type = tx_receipt["tx_type"]
+	
 	if status == "1":
 		var blockNumber = str(tx_receipt["blockNumber"])
 		print_log("Tx included in block " + blockNumber)
+		
+		if tx_type in ["START_GAME", "INITIATE_SWAP"]:
+			print_log("Awaiting VRF Response...")
+		
 	
 	if status == "0":
 		print_log("Transaction failed")
@@ -530,7 +675,7 @@ func await_transaction(callback):
 			print_log("Transaction Failed")
 			match tx_type:
 				"WITHDRAW":
-					if player_status["game_id"] != "0":
+					if player_status[connected_wallet]["game_id"] != "0":
 						print_log("Cannot withdraw tokens during a game")
 				
 				"CONCLUDE_GAME":
@@ -620,39 +765,6 @@ func buy_seed():
 	var _callback = EthersWeb.create_callback(self, "await_transaction", {"tx_type": "GET_HAND_VRF"})
 	# Gas limit must be specified because ethers.js will underestimate
 	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "260000", _callback)
-
-
-
-func game_info(game_id):
-	var callback = EthersWeb.create_callback(self, "got_game_info")
-
-	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "gameSessions", [game_id]) 
-	
-	EthersWeb.read_from_contract(
-		"Ethereum Sepolia",
-		SEPOLIA_GAME_LOGIC_ADDRESS, 
-		data,
-		callback
-		)
-
-func got_game_info(callback):
-	if has_error(callback):
-		return
-	
-	print_log("Objective Seed: " + str(callback["result"][2]))
-	#[0] gameToken
-	#[1] startTimestamp
-	#[2] objectiveSeed
-	#[3] maximumSpend
-	#[4] totalPot
-	#[5] highBid
-	#[6] hasConcluded
-	#[7] players
-	#[8] exited
-	#[9] scores
-	#[10] vrfSwapSeeds
-	#[11] discardedCards
-	#[12] winners
 
 
 
@@ -868,6 +980,8 @@ func prove_swap():
 		["address"]
 	]
 	
+	print_log("Generating ZKP to prove swap...")
+	
 	calculateProof(
 		inputs, 
 		public_types, 
@@ -920,6 +1034,8 @@ func prove_play_cards():
 		["address"]
 	]
 	
+	print_log("Generating ZKP to prove cards...")
+	
 	calculateProof(
 		inputs, 
 		public_types, 
@@ -932,7 +1048,7 @@ func prove_play_cards():
 
 
 func conclude_game():
-	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "concludeGame", [player_status["game_id"]])
+	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "concludeGame", [player_status[connected_wallet]["game_id"]])
 	
 	var _callback = EthersWeb.create_callback(self, "await_transaction", {"tx_type": "CONCLUDE_GAME"})
 	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data, "0", null, _callback)
@@ -969,7 +1085,7 @@ func withdraw_eth():
 func calculate_hands():
 	var nullifiers = generate_nullifier_set(hand_size)
 	for local_seed in local_seeds:
-		generate_hand(player_status["vrf_seed"], local_seed, nullifiers)
+		generate_hand(player_status[connected_wallet]["vrf_seed"], local_seed, nullifiers)
 		
 
 # Predict hands using the set of local seeds
@@ -1064,12 +1180,22 @@ func predict_score(obj_attractor, obj_color, cards):
 	return score
 
 
-func get_block_timestamp():
-	var callback = EthersWeb.create_callback(self, "got_timestamp")
+func get_time_limit(start_timestamp):
+	var callback = EthersWeb.create_callback(self, "got_timestamp", {"start_timestamp": start_timestamp})
 	EthersWeb.get_block_timestamp(callback)
 
 func got_timestamp(callback):
-	print(callback["result"])
+	if has_error(callback):
+		return
+
+	var time_elapsed = int(callback["result"]) - int(callback["start_timestamp"])
+	game_session["timeElapsed"] = time_elapsed
+	
+	# DEBUG
+	var time_remaining = 240 - time_elapsed
+	
+	$GameInfo/Time.visible = true
+	$GameInfo/Time.text = "TIME REMAINING: " + str(time_remaining)
 
 
 
@@ -1083,6 +1209,9 @@ var prompt_connect = true
 var must_copy_hand = true
 var PREGAME_STATE = ""
 var in_game = false
+var GAME_STATE = ""
+var got_game_objective = false
+var selected_card_indices = []
 
 
 func fade(outin, canvas, callback=null):
@@ -1134,7 +1263,6 @@ func reset_states():
 	fade("OUT", $Curtain)
 	poll_timer = 1.5
 	status_poll_timer = 4
-	in_game = false
 	PREGAME_STATE = ""
 	reset_prompts()
 	remove_overlay()
@@ -1143,3 +1271,14 @@ func reset_states():
 func reset_game_ui():
 	$GameInfo.modulate.a = 0
 	$GameInfo.visible = false
+	$GameInfo/Time.visible = false
+	$GameInfo/TopBid.text = "TOP BID: 0"
+	$GameInfo/SwapWindow/SwapActuator.text = "Initiate Swap"
+	$GameInfo/SwapWindow.visible = true
+	for card in $Cards.get_children():
+		card.queue_free()
+	selected_card_indices = []
+	GAME_STATE = ""
+	in_game = false
+	game_session = {}
+	got_game_objective = false

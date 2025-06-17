@@ -348,7 +348,7 @@ window.walletBridge = {
       try {
         const receipt = await tx.wait();
         console.log(receipt)
-        receiptCallback(receipt)
+        receiptCallback(receipt, callback)
       }
       catch (_error) { 
         console.error(_error); 
