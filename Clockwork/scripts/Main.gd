@@ -4,6 +4,20 @@ extends Control
 @onready var GAME_LOGIC_ABI = GameAbi.GAME_LOGIC_ABI
 @onready var GAME_TOKEN_ABI = GameAbi.GAME_TOKEN_ABI
 
+#var test_network = "Ethereum Sepolia"
+#
+## ETHEREUM SEPOLIA
+#const SEPOLIA_GAME_LOGIC_ADDRESS = "0x5507ea3aAB6c1EF18B1AE24f29e6D207CE64905b"
+#const SEPOLIA_GAME_TOKEN_ADDRESS = "0x9acF3472557482091Fe76c2D08F82819Ab9a28eb"
+
+
+var test_network = "Base Sepolia"
+
+# BASE SEPOLIA
+const SEPOLIA_GAME_LOGIC_ADDRESS = "0x396f6eB93cAdFa0ec72E74E864f3017421594f13"
+const SEPOLIA_GAME_TOKEN_ADDRESS = "0x0C8776B3427bBab1F4A4c599c153781598758495"
+
+
 # The current active wallet 
 var connected_wallet
 
@@ -187,7 +201,7 @@ func get_player_status(player_address):
 	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "tokenPlayerStatus", [player_address, SEPOLIA_GAME_TOKEN_ADDRESS]) 
 	
 	EthersWeb.read_from_contract(
-		"Ethereum Sepolia",
+		test_network,
 		SEPOLIA_GAME_LOGIC_ADDRESS, 
 		data,
 		callback
@@ -200,7 +214,7 @@ func get_token_balance(player_address):
 	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "depositBalance", [player_address, SEPOLIA_GAME_TOKEN_ADDRESS]) 
 	
 	EthersWeb.read_from_contract(
-		"Ethereum Sepolia",
+		test_network,
 		SEPOLIA_GAME_LOGIC_ADDRESS, 
 		data,
 		callback
@@ -348,9 +362,12 @@ func restore_hand():
 	if !hand_json:
 		print_log("Invalid JSON")
 		return
-	if hand_json.keys() != ["vrf_seed", "fixed_seed", "cards", "nullifiers", "card_hashes", "hand_hash", "vrf_swap_seed"]:
-		print_log("Invalid JSON")
-		return
+	
+	for key in hand_json.keys():
+		if !key in ["vrf_seed", "fixed_seed", "cards", "nullifiers", "card_hashes", "hand_hash", "vrf_swap_seed", "discarded_cards"]:
+			print_log("Invalid JSON")
+			return
+			
 	if hand_json["hand_hash"] != player_status[connected_wallet]["hand_hash"]:
 		print_log("Hand does not match on-chain hash")
 		return
@@ -450,7 +467,7 @@ func get_game_session(game_id):
 	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "gameSessions", [game_id]) 
 	
 	EthersWeb.read_from_contract(
-		"Ethereum Sepolia",
+		test_network,
 		SEPOLIA_GAME_LOGIC_ADDRESS, 
 		data,
 		callback
@@ -507,7 +524,7 @@ func get_vrf_swap_seed():
 	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "getVRFSwapSeed", [connected_wallet, SEPOLIA_GAME_TOKEN_ADDRESS]) 
 	
 	EthersWeb.read_from_contract(
-		"Ethereum Sepolia",
+		test_network,
 		SEPOLIA_GAME_LOGIC_ADDRESS, 
 		data,
 		callback
@@ -694,7 +711,7 @@ func get_proof_calldata(callback):
 
 	var _callback = EthersWeb.create_callback(self, "await_transaction", {"tx_type": "ZK_PROOF"})
 
-	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data, "0", null, _callback)
+	EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0", null, _callback)
 	
 	print_log("ZKP Generated")
 
@@ -804,9 +821,6 @@ func load_bytes(path: String) -> PackedByteArray:
 
 ### GAME CONSTANTS
 
-const SEPOLIA_GAME_LOGIC_ADDRESS = "0x5507ea3aAB6c1EF18B1AE24f29e6D207CE64905b"
-const SEPOLIA_GAME_TOKEN_ADDRESS = "0x9acF3472557482091Fe76c2D08F82819Ab9a28eb"
-
 const local_seeds = [948321578921, 323846237643, 29478234787, 947289484324, 4827847813436, 98432542473237, 56324278238234, 77238476429378, 10927437265398, 32589475384735, 87834727625345, 7723645230273, 298467856729, 233652987328, 2389572388357, 23858923387534, 1242398565735, 6875282937855, 82984325902750, 48547252957635743]
 
 const deck = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
@@ -829,7 +843,11 @@ func buy_seed():
 	
 	var _callback = EthersWeb.create_callback(self, "await_transaction", {"tx_type": "GET_HAND_VRF"})
 	# Gas limit must be specified because ethers.js will underestimate
-	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "260000", _callback)
+	
+	# DEBUG
+	# the necessary GAS LIMIT varies by network
+	EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "360000", _callback)
+	#EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "260000", _callback)
 
 
 
@@ -897,7 +915,10 @@ func start_game():
 	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "startGame", params)
 	var _callback = EthersWeb.create_callback(self, "await_transaction", {"tx_type": "START_GAME"})
 	
-	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "380000", _callback)
+	# DEBUG
+	# the necessary GAS LIMIT varies by network
+	EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "480000", _callback)
+	#EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "380000", _callback)
 	
 	# DEBUG 
 	# NOTE
@@ -913,14 +934,14 @@ func raise():
 	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "raise", [SEPOLIA_GAME_TOKEN_ADDRESS, amount])
 	
 	var _callback = EthersWeb.create_callback(self, "await_transaction", {"tx_type": "RAISE"})
-	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data, "0", null, _callback)
+	EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0", null, _callback)
 
 
 func fold():
 	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "fold", [SEPOLIA_GAME_TOKEN_ADDRESS])
 	
 	var _callback = EthersWeb.create_callback(self, "await_transaction", {"tx_type": "FOLD"})
-	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data, "0", null, _callback)
+	EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0", null, _callback)
 
 
 func swap_cards():
@@ -945,8 +966,11 @@ func swap_cards():
 	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "swapCards", [SEPOLIA_GAME_TOKEN_ADDRESS, poseidon_hash])
 	
 	var _callback = EthersWeb.create_callback(self, "await_transaction", {"tx_type": "INITIATE_SWAP"})
-	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "260000", _callback)
-
+	
+	# DEBUG
+	# the necessary GAS LIMIT varies by network
+	EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "360000", _callback)
+	#EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "260000", _callback)
 
 #To prove the swap, we need these inputs:
 	# + The new VRF Swap Seed (vrfSeed)
@@ -988,16 +1012,13 @@ func prove_swap():
 	hand["cards"][indices[0]] = drawn_cards["cards"][0]
 	hand["cards"][indices[1]] = drawn_cards["cards"][1]
 
+	var card_hashes = []
+	for i in range(5):
+		var card_hash = poseidon([hand["cards"][i], hand["nullifiers"][i]])
+		card_hashes.push_back(card_hash)
 	
+	hand["hand_hash"] = poseidon(card_hashes)
 	
-	#var card_hashes = []
-	#for i in range(5):
-		#var card_hash = poseidon([hand["cards"][i], hand["nullifiers"][i]])
-		#card_hashes.push_back(card_hash)
-	#
-	#hand["hand_hash"] = poseidon(hand["cards"])
-	
-
 	#     #     #     #     #     #     #     #     #     #
 	
 	var inputs = {
@@ -1096,7 +1117,7 @@ func conclude_game():
 	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "concludeGame", [player_status[connected_wallet]["game_id"]])
 	
 	var _callback = EthersWeb.create_callback(self, "await_transaction", {"tx_type": "CONCLUDE_GAME"})
-	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data, "0", null, _callback)
+	EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0", null, _callback)
 
 
 
@@ -1110,7 +1131,7 @@ func mint_and_deposit():
 	var data = EthersWeb.get_calldata(GAME_TOKEN_ABI, "mintAndDeposit", [connected_wallet, deposit_contract])
 	
 	var _callback = EthersWeb.create_callback(self, "await_transaction", {"tx_type": "DEPOSIT"})
-	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_TOKEN_ADDRESS, data, "0.0001", "220000", _callback)
+	EthersWeb.send_transaction(test_network, SEPOLIA_GAME_TOKEN_ADDRESS, data, "0.0001", "220000", _callback)
 
 
 func withdraw_eth():
@@ -1121,7 +1142,7 @@ func withdraw_eth():
 	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "withdrawGameToken", [SEPOLIA_GAME_TOKEN_ADDRESS])
 	
 	var _callback = EthersWeb.create_callback(self, "await_transaction", {"tx_type": "WITHDRAW"})
-	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data, "0", null, _callback)
+	EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0", null, _callback)
 
 
 

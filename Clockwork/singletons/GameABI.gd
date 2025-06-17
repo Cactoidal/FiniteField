@@ -683,6 +683,40 @@ var GAME_LOGIC_ABI = [
 		"type": "function"
 	},
 	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "gameId",
+				"type": "uint256"
+			}
+		],
+		"name": "getAllPlayers",
+		"outputs": [
+			{
+				"internalType": "address[1]",
+				"name": "",
+				"type": "address[1]"
+			},
+			{
+				"internalType": "address[1]",
+				"name": "",
+				"type": "address[1]"
+			},
+			{
+				"internalType": "uint256[1]",
+				"name": "",
+				"type": "uint256[1]"
+			},
+			{
+				"internalType": "uint256[1]",
+				"name": "",
+				"type": "uint256[1]"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
 		"inputs": [],
 		"name": "getBalance",
 		"outputs": [
@@ -1126,40 +1160,6 @@ var GAME_LOGIC_ABI = [
 		"name": "transferOwnership",
 		"outputs": [],
 		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "uint256[2]",
-				"name": "_pA",
-				"type": "uint256[2]"
-			},
-			{
-				"internalType": "uint256[2][2]",
-				"name": "_pB",
-				"type": "uint256[2][2]"
-			},
-			{
-				"internalType": "uint256[2]",
-				"name": "_pC",
-				"type": "uint256[2]"
-			},
-			{
-				"internalType": "uint256[3]",
-				"name": "_pubSignals",
-				"type": "uint256[3]"
-			}
-		],
-		"name": "verifyHandProof",
-		"outputs": [
-			{
-				"internalType": "bool",
-				"name": "",
-				"type": "bool"
-			}
-		],
-		"stateMutability": "view",
 		"type": "function"
 	},
 	{

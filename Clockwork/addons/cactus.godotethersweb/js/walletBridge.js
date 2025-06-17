@@ -267,21 +267,21 @@ window.walletBridge = {
   // CONTRACT READ 
 
   initiateContractRead: async function(_chainId, contract_address, calldata, success, failure, callback) {
-      
+    
     try {
 
         await window.ethereum.request({
           method: "wallet_switchEthereumChain",
           params: [{ chainId: _chainId }],
           })
-        
+
         var provider = new window.ethers.BrowserProvider(window.ethereum);
 
         const result = await provider.call({
         to: contract_address,
         data: calldata,
         });
-   
+
         success(callback, result.toString()); 
         } 
 		

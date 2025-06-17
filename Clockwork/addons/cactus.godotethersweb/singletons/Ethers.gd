@@ -14,6 +14,8 @@ var has_wallet = false
 var transaction_logs = []
 var event_streams = []
 
+
+
 func _ready():
 	# Scripts are attached to the browser window on ready
 	load_and_attach(ethers_filepath)
