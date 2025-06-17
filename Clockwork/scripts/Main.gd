@@ -1,16 +1,16 @@
 extends Control
 
-@onready var ERC20 = Contract.ERC20
 @onready var window = EthersWeb.window
+@onready var GAME_LOGIC_ABI = GameAbi.GAME_LOGIC_ABI
+@onready var GAME_TOKEN_ABI = GameAbi.GAME_TOKEN_ABI
 
+# The current active wallet 
 var connected_wallet
+
+# Player statuses are mapped to wallet addresses as they are detected
 var player_status = {}
-var in_game = false
 
 
-var listening = false
-var connect_button_position = Vector2(50,25)
-var prompt_connect = true
 
 ## ZK 
 
@@ -45,8 +45,12 @@ var playCards_witness_calculator_filepath = "res://js/playCards_witness_calculat
 
 
 func _ready():
+	# Initialize UI
 	fade("OUT", $Curtain)
 	connect_buttons()
+	EthersWeb.register_transaction_log(self, "receive_tx_receipt")
+	
+	# Load all ZK scripts from .PCK file
 	load_and_attach(snarkjs_filepath)
 	
 	# witness_calculator.js files need to be attached to the
@@ -73,11 +77,10 @@ func connect_buttons():
 	$Overlay/Restore/DeleteHand.connect("pressed", delete_hand)
 	$Overlay/StartGame/StartGame.connect("pressed", start_game)
 	
-	#DEBUG
-	$Prompt/RejoinGame.connect("pressed", conclude_game)
-	#$Prompt/RejoinGame.connect("pressed", rejoin_game)
+	$GameInfo/Raise.connect("pressed", raise)
+	$GameInfo/Fold.connect("pressed", fold)
 	
-	EthersWeb.register_transaction_log(self, "receive_tx_receipt")
+	
 
 
 func connect_wallet():
@@ -89,9 +92,15 @@ func connect_wallet():
 func got_account_list(callback):
 	if callback["result"]:
 		connected_wallet = callback["result"][0]
+		
+		# Instantiate the wallet if needed
+		if !connected_wallet in player_status.keys():
+			player_status[connected_wallet] = {"hand": {}}
+		
 		prompt_connect = false
 		fade("OUT", $ConnectWallet, move_connect_button)
 		fade("OUT", $Title, move_connect_button)
+		fade("IN", $Log)
 		fade("IN", $Info, fade.bind("IN", $Prompt))
 		
 		print_log("Retrieving player info for " + connected_wallet)
@@ -106,20 +115,16 @@ func _process(delta):
 	if connected_wallet:
 		
 		poll_timer -= delta
-		status_poll_timer -= delta
+		
+		# Only poll the player status while in the pregame state
+		if !in_game:
+			status_poll_timer -= delta
 		
 		if poll_timer < 0:
 			var callback = EthersWeb.create_callback(self, "polled_accounts")
 			EthersWeb.poll_accounts(callback)
 			poll_timer = 1.5
 
-
-# DEBUG
-# Check if invited into a game
-# If, at any point in time, the player has a valid hand
-# and a gameId, they should be automatically moved from
-# pregame state to game state.  Rejoining is similarly 
-# automatic
 
 
 func polled_accounts(callback):
@@ -132,6 +137,17 @@ func polled_accounts(callback):
 	else:
 		var wallet = callback["result"]
 		if connected_wallet != wallet:
+			
+			# Instantiate new accounts
+			if !wallet in player_status.keys():
+				player_status[wallet] = {"hand":{}}
+			
+			# Account switch detected, reset UI
+			reset_states()
+			
+			# Get info for new account
+			connected_wallet = wallet
+			print_log("Retrieving player info for " + wallet)
 			get_player_status(wallet)
 			get_token_balance(wallet)
 		
@@ -139,8 +155,6 @@ func polled_accounts(callback):
 		elif status_poll_timer < 0:
 			get_player_status(connected_wallet)
 			
-		connected_wallet = wallet
-		
 		if prompt_connect:
 			prompt_connect = false
 			fade("OUT", $ConnectWallet)
@@ -148,12 +162,10 @@ func polled_accounts(callback):
 		
 
 
-
-
 func get_player_status(player_address):
 	
 	# Reset the poll timer with every request, since a request
-	# can come from multiple sources
+	# can come from multiple sources in this script
 	status_poll_timer = 4
 	
 	var callback = EthersWeb.create_callback(self, "received_player_status")
@@ -180,10 +192,12 @@ func get_token_balance(player_address):
 		callback
 		)
 
+
 func received_token_balance(callback):
 	if callback["result"]:
-		player_status["token_balance"] = callback["result"][0]
-		$Info/TokenBalance.text = "Token Balance: " + player_status["token_balance"]
+		var wallet = player_status[connected_wallet]
+		wallet["token_balance"] = callback["result"][0]
+		$Info/TokenBalance.text = "Token Balance: " + wallet["token_balance"]
 	else:
 		$Info/TokenBalance.text = ""
 		check_rpc()
@@ -192,15 +206,16 @@ func received_token_balance(callback):
 
 func received_player_status(callback):
 	if callback["result"]:
-		player_status["vrf_seed"] = callback["result"][0]
-		player_status["hand_hash"] = callback["result"][2]
-		player_status["game_id"] = callback["result"][3]
-		player_status["player_index"] = callback["result"][4]
-		player_status["total_bid_amount"] = callback["result"][5]
-		player_status["has_requested_seed"] = callback["result"][6]
+		var wallet = player_status[connected_wallet]
+		wallet["vrf_seed"] = callback["result"][0]
+		wallet["hand_hash"] = callback["result"][2]
+		wallet["game_id"] = callback["result"][3]
+		wallet["player_index"] = callback["result"][4]
+		wallet["total_bid_amount"] = callback["result"][5]
+		wallet["has_requested_seed"] = callback["result"][6]
 		
 		
-		if player_status["game_id"] != "0":
+		if wallet["game_id"] != "0":
 			if !in_game:
 				handle_pregame()
 			else:
@@ -214,16 +229,17 @@ func received_player_status(callback):
 		check_rpc()
 
 
-var PREGAME_STATE = ""
-var must_copy_hand = true
+
 func handle_pregame():
+	var hand = player_status[connected_wallet]["hand"]
+	
 	var _pregame_state = ""
 			
 	if player_status["game_id"] != "0":
 		if !"hand_hash" in hand:
 			_pregame_state = "RESTORE_HAND"
 		else:
-			_pregame_state = "REJOIN_GAME"
+			_pregame_state = "JOIN_GAME"
 				
 	elif player_status["hand_hash"] != "0":
 		if !"hand_hash" in hand:
@@ -248,7 +264,7 @@ func handle_pregame():
 		return
 			
 	match PREGAME_STATE:
-		"REJOIN_GAME": prompt_rejoin_game()
+		"JOIN_GAME": prompt_join_game()
 		"CREATE_GAME": prompt_create_game()
 		"RESTORE_HAND": prompt_restore_hand()
 		"PROVE_HAND": prompt_prove_hand()
@@ -275,7 +291,7 @@ func prompt_restore_hand():
 	$Overlay/Restore.visible = true
 	$Overlay.visible = true
 	
-	if player_status["game_id"] != "0":
+	if player_status[connected_wallet]["game_id"] != "0":
 		$Overlay/Restore/DeleteHand.text = "Conclude Game"
 	else:
 		$Overlay/Restore/DeleteHand.text = "Join Game"
@@ -286,14 +302,17 @@ func prompt_create_game():
 	fadein_button($Prompt/StartGame)
 
 
-func prompt_rejoin_game():
+func prompt_join_game():
 	print_log("Game ID found.  Joining...")
-	fadein_button($Prompt/RejoinGame)
+	fade("OUT", $Info, join_game)
+	
+
 
 
 func get_hand():
 	if must_copy_hand:
-		hand = generate_hand(player_status["vrf_seed"], get_random_local_seed(), generate_nullifier_set(hand_size))
+		var hand = generate_hand(player_status["vrf_seed"], get_random_local_seed(), generate_nullifier_set(hand_size))
+		player_status[connected_wallet]["hand"] = hand
 		$Overlay/Warning/HandText.text = str(hand)
 		$Overlay/Warning.visible = true
 		$Overlay.visible = true
@@ -321,25 +340,19 @@ func restore_hand():
 		print_log("Hand does not match on-chain hash")
 		return
 		
-	hand = hand_json
+	player_status[connected_wallet]["hand"] = hand_json
 	$Overlay/Restore.visible = false
 	$Overlay.visible = false
 	get_player_status(connected_wallet)
 
 
 # DEBUG
-# Overlay needs to be made invisible again
 func delete_hand():
 	if $Overlay/Restore/DeleteHand.text == "Conclude Game":
 		conclude_game()
 	elif $Overlay/Restore/DeleteHand.text == "Join Game":
 		start_game()
 
-
-
-func check_for_invite():
-	print_log("Looking for invitation...")
-	get_player_status(connected_wallet)
 
 # DEBUG
 # Multi opponent support doesn't exist yet 
@@ -350,8 +363,11 @@ func select_game_mode():
 
 
 
-func rejoin_game():
-	pass
+func join_game():
+	$Info.visible = false
+	in_game = true
+	$GameInfo.visible = true
+	fade("IN", $GameInfo)
 
 
 
@@ -372,18 +388,20 @@ func receive_tx_receipt(tx_receipt):
 		
 	get_token_balance(connected_wallet)
 	get_player_status(connected_wallet)
-	#print_log(txt)
+
 
 
 func print_log(txt):
-	$Info/Log.text += "> " + txt + "\n"
-	$Info/Log.scroll_vertical = $Info/Log.get_v_scroll_bar().max_value
+	$Log.text += "> " + txt + "\n"
+	$Log.scroll_vertical = $Log.get_v_scroll_bar().max_value
+
 
 func has_error(callback):
 	if "error_code" in callback.keys():
 		var txt = "Error " + str(callback["error_code"]) + ": " + callback["error_message"]
 		print_log(txt)
 		return true
+
 
 func check_rpc():
 	print_log("No response from chain, check RPC.")
@@ -467,12 +485,11 @@ func get_proof_calldata(callback):
 	var data = EthersWeb.get_calldata(ABI, function_name, decoded_values)
 
 	var _callback = EthersWeb.create_callback(self, "await_transaction", {"tx_type": "ZK_PROOF"})
-	# DEBUG
-	# Will probably split this part into a separate function
+
 	EthersWeb.send_transaction("Ethereum Sepolia", SEPOLIA_GAME_LOGIC_ADDRESS, data, "0", null, _callback)
 	
 	print_log("ZKP Generated")
-	#print_log("PROOF VALUES:\n" + str(decoded_values) + "\n\n")
+
 	
 
 
@@ -575,30 +592,18 @@ func load_bytes(path: String) -> PackedByteArray:
 
 
 
-### GAME VARIABLES
+### GAME CONSTANTS
 
-# Game Logic
-var SEPOLIA_GAME_LOGIC_ADDRESS = "0x5507ea3aAB6c1EF18B1AE24f29e6D207CE64905b"
+const SEPOLIA_GAME_LOGIC_ADDRESS = "0x5507ea3aAB6c1EF18B1AE24f29e6D207CE64905b"
+const SEPOLIA_GAME_TOKEN_ADDRESS = "0x9acF3472557482091Fe76c2D08F82819Ab9a28eb"
 
-# Token
-var SEPOLIA_GAME_TOKEN_ADDRESS = "0x9acF3472557482091Fe76c2D08F82819Ab9a28eb"
+const local_seeds = [948321578921, 323846237643, 29478234787, 947289484324, 4827847813436, 98432542473237, 56324278238234, 77238476429378, 10927437265398, 32589475384735, 87834727625345, 7723645230273, 298467856729, 233652987328, 2389572388357, 23858923387534, 1242398565735, 6875282937855, 82984325902750, 48547252957635743]
 
-var local_seeds = [948321578921, 323846237643, 29478234787, 947289484324, 4827847813436, 98432542473237, 56324278238234, 77238476429378, 10927437265398, 32589475384735, 87834727625345, 7723645230273, 298467856729, 233652987328, 2389572388357, 23858923387534, 1242398565735, 6875282937855, 82984325902750, 48547252957635743]
+const deck = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+const hand_size = 5
 
-var deck = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
-var hand_size = 5
-
-var ante = "100"
-var maximum_spend = "1000"
-
-var vrf_swap_seed
-var hand = {}
-var discarded_cards
-
-# DEBUG 
-# Add a way to pull this from the chain instead of setting it manually here
-var game_id = 2
-
+const ante = "100"
+const maximum_spend = "1000"
 
 
 
@@ -618,7 +623,7 @@ func buy_seed():
 
 
 
-func game_info():
+func game_info(game_id):
 	var callback = EthersWeb.create_callback(self, "got_game_info")
 
 	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "gameSessions", [game_id]) 
@@ -650,8 +655,7 @@ func got_game_info(callback):
 	#[12] winners
 
 
-# DEBUG 
-# Only returning zero?
+
 func get_vrf_swap_seed():
 	var callback = EthersWeb.create_callback(self, "got_vrf_swap_seed")
 
@@ -668,7 +672,8 @@ func got_vrf_swap_seed(callback):
 	if has_error(callback):
 		return
 	
-	vrf_swap_seed = callback["result"][0]
+	var vrf_swap_seed = callback["result"][0]
+	player_status[connected_wallet]["hand"]["vrf_swap_seed"] = vrf_swap_seed
 	print_log("VRF Swap Seed: " + vrf_swap_seed)
 
 
@@ -679,7 +684,9 @@ func get_hand_zk_proof():
 		print_log("Please connect your wallet")
 		return
 	
-	if !hand["vrf_seed"]:
+	var hand = player_status[connected_wallet]["hand"]
+	
+	if !"vrf_seed" in hand.keys():
 		print_log("Please get the current seed")
 		return
 	
@@ -729,7 +736,8 @@ func start_game():
 		ante,
 		maximum_spend,
 		# DEBUG
-		# [TABLE_SIZE] players, i.e. 4 players
+		# This array must contain [TABLE_SIZE] players, i.e. 4 players
+		# Right now just solo
 		[connected_wallet]
 	]
 	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "startGame", params)
@@ -768,10 +776,12 @@ func swap_cards():
 	var nullifier = generate_nullifier_set(1)[0]
 	
 	# Cache for proving once VRF seed has returned
-	discarded_cards = {
+	var discarded_cards = {
 		"indices": indices,
 		"nullifier": nullifier
 	}
+	
+	player_status[connected_wallet]["hand"]["discarded_cards"] = discarded_cards
 	
 	var poseidon_hash = poseidon([indices[0], indices[1], nullifier])
 	
@@ -797,12 +807,17 @@ func swap_cards():
 	# + uint256 (vrfSeed)
 	# + address (gameToken)
 func prove_swap():
+	
+	# This is the direct reference, NOT a copy,
+	# so changes will persist.
+	var hand = player_status[connected_wallet]["hand"]
 
+	var vrf_swap_seed = hand["vrf_swap_seed"]
 	var fixed_seed = get_random_local_seed()
 	var old_cards = hand["card_hashes"]
 	var indices = [1,2]
 	var new_nullifiers = generate_nullifier_set(2)
-	var discard_nullifier = discarded_cards["nullifier"]
+	var discard_nullifier = hand["discarded_cards"]["nullifier"]
 	
 	
 	# DEBUG
@@ -877,7 +892,9 @@ func prove_swap():
 	# + uint256 (cards[4])
 	# + address (gameToken)
 func prove_play_cards():
-	# DEBUG
+	
+	var hand = player_status[connected_wallet]["hand"]
+	
 	var nullifiers = hand["nullifiers"]
 	var cards = hand["cards"]
 	
@@ -1047,1647 +1064,29 @@ func predict_score(obj_attractor, obj_color, cards):
 	return score
 
 
+func get_block_timestamp():
+	var callback = EthersWeb.create_callback(self, "got_timestamp")
+	EthersWeb.get_block_timestamp(callback)
 
-var GAME_LOGIC_ABI = [
-	{
-		"inputs": [],
-		"stateMutability": "nonpayable",
-		"type": "constructor"
-	},
-	{
-		"inputs": [],
-		"name": "AlreadyHaveHand",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "AlreadyRequestedSeed",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "AlreadySubmittedScore",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "AlreadySwapped",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "AnteDoesNotMatch",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "CannotWithdrawDuringGame",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "DoesNotMatchHandHash",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "GameAlreadyEnded",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "GameHasNotStarted",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "GameIDNotFound",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "HaveNotSwapped",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "InsufficientFundsForVRF",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "InsufficientTokensForAnte",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "InvalidDiscard",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "InvalidHash",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "InvalidMaximumSpend",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "InvalidPlayerCount",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "InvalidRaise",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "InvalidVRFSeed",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "InvalidZKP",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "NotEnoughTimePassed",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "NotGameToken",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "NotInGame",
-		"type": "error"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "have",
-				"type": "address"
-			},
-			{
-				"internalType": "address",
-				"name": "want",
-				"type": "address"
-			}
-		],
-		"name": "OnlyVRFWrapperCanFulfill",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "OutOfTime",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "PlayerAlreadyInGame",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "PlayerLacksHand",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "PlayerLacksTokens",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "TooEarly",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "TransferFailed",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "ZeroAddress",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "ZeroAmount",
-		"type": "error"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": true,
-				"internalType": "address",
-				"name": "tokenContract",
-				"type": "address"
-			},
-			{
-				"indexed": true,
-				"internalType": "address",
-				"name": "recipient",
-				"type": "address"
-			},
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "amount",
-				"type": "uint256"
-			}
-		],
-		"name": "Deposited",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": false,
-				"internalType": "address",
-				"name": "player",
-				"type": "address"
-			},
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "gameId",
-				"type": "uint256"
-			}
-		],
-		"name": "Folded",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": false,
-				"internalType": "address[]",
-				"name": "winners",
-				"type": "address[]"
-			},
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "gameId",
-				"type": "uint256"
-			},
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "prize",
-				"type": "uint256"
-			}
-		],
-		"name": "GameConcluded",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "gameId",
-				"type": "uint256"
-			},
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "objectiveVRFSeed",
-				"type": "uint256"
-			}
-		],
-		"name": "GameStarted",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": true,
-				"internalType": "address",
-				"name": "from",
-				"type": "address"
-			},
-			{
-				"indexed": true,
-				"internalType": "address",
-				"name": "to",
-				"type": "address"
-			}
-		],
-		"name": "OwnershipTransferRequested",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": true,
-				"internalType": "address",
-				"name": "from",
-				"type": "address"
-			},
-			{
-				"indexed": true,
-				"internalType": "address",
-				"name": "to",
-				"type": "address"
-			}
-		],
-		"name": "OwnershipTransferred",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": false,
-				"internalType": "address",
-				"name": "player",
-				"type": "address"
-			},
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "gameId",
-				"type": "uint256"
-			},
-			{
-				"indexed": false,
-				"internalType": "uint256[5]",
-				"name": "cards",
-				"type": "uint256[5]"
-			}
-		],
-		"name": "PlayedCards",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": false,
-				"internalType": "address",
-				"name": "player",
-				"type": "address"
-			},
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "handHash",
-				"type": "uint256"
-			},
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "playerVRFSeed",
-				"type": "uint256"
-			}
-		],
-		"name": "ProvedHand",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": false,
-				"internalType": "address",
-				"name": "player",
-				"type": "address"
-			},
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "gameId",
-				"type": "uint256"
-			},
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "playerVRFSeed",
-				"type": "uint256"
-			}
-		],
-		"name": "ProvedSwap",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": false,
-				"internalType": "address",
-				"name": "player",
-				"type": "address"
-			},
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "gameId",
-				"type": "uint256"
-			},
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "amount",
-				"type": "uint256"
-			}
-		],
-		"name": "Raised",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": false,
-				"internalType": "address",
-				"name": "",
-				"type": "address"
-			},
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"name": "Received",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "requestId",
-				"type": "uint256"
-			},
-			{
-				"indexed": false,
-				"internalType": "uint256[]",
-				"name": "randomWords",
-				"type": "uint256[]"
-			},
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "payment",
-				"type": "uint256"
-			}
-		],
-		"name": "RequestFulfilled",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "requestId",
-				"type": "uint256"
-			},
-			{
-				"indexed": false,
-				"internalType": "uint32",
-				"name": "numWords",
-				"type": "uint32"
-			}
-		],
-		"name": "RequestSent",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "gameId",
-				"type": "uint256"
-			}
-		],
-		"name": "StartingNewGame",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": false,
-				"internalType": "address",
-				"name": "player",
-				"type": "address"
-			},
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "gameId",
-				"type": "uint256"
-			}
-		],
-		"name": "SwappingCards",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": true,
-				"internalType": "address",
-				"name": "user",
-				"type": "address"
-			},
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "amount",
-				"type": "uint256"
-			}
-		],
-		"name": "Withdrawn",
-		"type": "event"
-	},
-	{
-		"inputs": [],
-		"name": "acceptOwnership",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "playerAddress",
-				"type": "address"
-			},
-			{
-				"internalType": "address",
-				"name": "gameToken",
-				"type": "address"
-			},
-			{
-				"internalType": "uint256",
-				"name": "ante",
-				"type": "uint256"
-			}
-		],
-		"name": "buyHandSeed",
-		"outputs": [],
-		"stateMutability": "payable",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "callbackGasLimit",
-		"outputs": [
-			{
-				"internalType": "uint32",
-				"name": "",
-				"type": "uint32"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "uint256",
-				"name": "gameId",
-				"type": "uint256"
-			}
-		],
-		"name": "concludeGame",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "",
-				"type": "address"
-			},
-			{
-				"internalType": "address",
-				"name": "",
-				"type": "address"
-			}
-		],
-		"name": "depositBalance",
-		"outputs": [
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "tokenContract",
-				"type": "address"
-			},
-			{
-				"internalType": "address",
-				"name": "player",
-				"type": "address"
-			},
-			{
-				"internalType": "uint256",
-				"name": "amount",
-				"type": "uint256"
-			}
-		],
-		"name": "depositGameToken",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "gameToken",
-				"type": "address"
-			}
-		],
-		"name": "fold",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"name": "gameSessions",
-		"outputs": [
-			{
-				"internalType": "address",
-				"name": "gameToken",
-				"type": "address"
-			},
-			{
-				"internalType": "uint256",
-				"name": "startTimestamp",
-				"type": "uint256"
-			},
-			{
-				"internalType": "uint256",
-				"name": "objectiveSeed",
-				"type": "uint256"
-			},
-			{
-				"internalType": "uint256",
-				"name": "maximumSpend",
-				"type": "uint256"
-			},
-			{
-				"internalType": "uint256",
-				"name": "totalPot",
-				"type": "uint256"
-			},
-			{
-				"internalType": "uint256",
-				"name": "highBid",
-				"type": "uint256"
-			},
-			{
-				"internalType": "bool",
-				"name": "hasConcluded",
-				"type": "bool"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "getBalance",
-		"outputs": [
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "getLinkToken",
-		"outputs": [
-			{
-				"internalType": "contract LinkTokenInterface",
-				"name": "",
-				"type": "address"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "uint256",
-				"name": "vrfSeed",
-				"type": "uint256"
-			}
-		],
-		"name": "getObjective",
-		"outputs": [
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			},
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"stateMutability": "pure",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "playerAddress",
-				"type": "address"
-			},
-			{
-				"internalType": "address",
-				"name": "gameToken",
-				"type": "address"
-			}
-		],
-		"name": "getVRFSwapSeed",
-		"outputs": [
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "i_vrfV2PlusWrapper",
-		"outputs": [
-			{
-				"internalType": "contract IVRFV2PlusWrapper",
-				"name": "",
-				"type": "address"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "latestGameId",
-		"outputs": [
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "owner",
-		"outputs": [
-			{
-				"internalType": "address",
-				"name": "",
-				"type": "address"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"name": "pendingVRFRequest",
-		"outputs": [
-			{
-				"internalType": "enum CardGame.vrfRequestType",
-				"name": "requestType",
-				"type": "uint8"
-			},
-			{
-				"internalType": "address",
-				"name": "requester",
-				"type": "address"
-			},
-			{
-				"internalType": "address",
-				"name": "gameToken",
-				"type": "address"
-			},
-			{
-				"internalType": "uint256",
-				"name": "gameId",
-				"type": "uint256"
-			},
-			{
-				"internalType": "uint256",
-				"name": "playerIndex",
-				"type": "uint256"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "uint256[2]",
-				"name": "_pA",
-				"type": "uint256[2]"
-			},
-			{
-				"internalType": "uint256[2][2]",
-				"name": "_pB",
-				"type": "uint256[2][2]"
-			},
-			{
-				"internalType": "uint256[2]",
-				"name": "_pC",
-				"type": "uint256[2]"
-			},
-			{
-				"internalType": "uint256[3]",
-				"name": "_pubSignals",
-				"type": "uint256[3]"
-			}
-		],
-		"name": "proveHand",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "uint256[2]",
-				"name": "_pA",
-				"type": "uint256[2]"
-			},
-			{
-				"internalType": "uint256[2][2]",
-				"name": "_pB",
-				"type": "uint256[2][2]"
-			},
-			{
-				"internalType": "uint256[2]",
-				"name": "_pC",
-				"type": "uint256[2]"
-			},
-			{
-				"internalType": "uint256[7]",
-				"name": "_pubSignals",
-				"type": "uint256[7]"
-			}
-		],
-		"name": "provePlayCards",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "uint256[2]",
-				"name": "_pA",
-				"type": "uint256[2]"
-			},
-			{
-				"internalType": "uint256[2][2]",
-				"name": "_pB",
-				"type": "uint256[2][2]"
-			},
-			{
-				"internalType": "uint256[2]",
-				"name": "_pC",
-				"type": "uint256[2]"
-			},
-			{
-				"internalType": "uint256[5]",
-				"name": "_pubSignals",
-				"type": "uint256[5]"
-			}
-		],
-		"name": "proveSwapCards",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "gameToken",
-				"type": "address"
-			},
-			{
-				"internalType": "uint256",
-				"name": "amount",
-				"type": "uint256"
-			}
-		],
-		"name": "raise",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "uint256",
-				"name": "_requestId",
-				"type": "uint256"
-			},
-			{
-				"internalType": "uint256[]",
-				"name": "_randomWords",
-				"type": "uint256[]"
-			}
-		],
-		"name": "rawFulfillRandomWords",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "requestConfirmations",
-		"outputs": [
-			{
-				"internalType": "uint16",
-				"name": "",
-				"type": "uint16"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"name": "s_requests",
-		"outputs": [
-			{
-				"internalType": "uint256",
-				"name": "paid",
-				"type": "uint256"
-			},
-			{
-				"internalType": "bool",
-				"name": "fulfilled",
-				"type": "bool"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "uint256",
-				"name": "vrfSeed",
-				"type": "uint256"
-			},
-			{
-				"internalType": "uint256[5]",
-				"name": "cards",
-				"type": "uint256[5]"
-			}
-		],
-		"name": "scoreHand",
-		"outputs": [
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"stateMutability": "pure",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "_gameToken",
-				"type": "address"
-			},
-			{
-				"internalType": "uint256",
-				"name": "_ante",
-				"type": "uint256"
-			},
-			{
-				"internalType": "uint256",
-				"name": "_maximumSpend",
-				"type": "uint256"
-			},
-			{
-				"internalType": "address[1]",
-				"name": "players",
-				"type": "address[1]"
-			}
-		],
-		"name": "startGame",
-		"outputs": [],
-		"stateMutability": "payable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "gameToken",
-				"type": "address"
-			},
-			{
-				"internalType": "uint256",
-				"name": "discardedCardsHash",
-				"type": "uint256"
-			}
-		],
-		"name": "swapCards",
-		"outputs": [],
-		"stateMutability": "payable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "",
-				"type": "address"
-			},
-			{
-				"internalType": "address",
-				"name": "",
-				"type": "address"
-			}
-		],
-		"name": "tokenPlayerStatus",
-		"outputs": [
-			{
-				"internalType": "uint256",
-				"name": "vrfSeed",
-				"type": "uint256"
-			},
-			{
-				"internalType": "uint256",
-				"name": "ante",
-				"type": "uint256"
-			},
-			{
-				"internalType": "uint256",
-				"name": "currentHand",
-				"type": "uint256"
-			},
-			{
-				"internalType": "uint256",
-				"name": "gameId",
-				"type": "uint256"
-			},
-			{
-				"internalType": "uint256",
-				"name": "playerIndex",
-				"type": "uint256"
-			},
-			{
-				"internalType": "uint256",
-				"name": "totalBidAmount",
-				"type": "uint256"
-			},
-			{
-				"internalType": "bool",
-				"name": "hasRequestedSeed",
-				"type": "bool"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "to",
-				"type": "address"
-			}
-		],
-		"name": "transferOwnership",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "uint256[2]",
-				"name": "_pA",
-				"type": "uint256[2]"
-			},
-			{
-				"internalType": "uint256[2][2]",
-				"name": "_pB",
-				"type": "uint256[2][2]"
-			},
-			{
-				"internalType": "uint256[2]",
-				"name": "_pC",
-				"type": "uint256[2]"
-			},
-			{
-				"internalType": "uint256[3]",
-				"name": "_pubSignals",
-				"type": "uint256[3]"
-			}
-		],
-		"name": "verifyHandProof",
-		"outputs": [
-			{
-				"internalType": "bool",
-				"name": "",
-				"type": "bool"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "tokenContract",
-				"type": "address"
-			}
-		],
-		"name": "withdrawGameToken",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "uint256",
-				"name": "gameId",
-				"type": "uint256"
-			},
-			{
-				"internalType": "uint256",
-				"name": "limit",
-				"type": "uint256"
-			}
-		],
-		"name": "withinTimeLimit",
-		"outputs": [
-			{
-				"internalType": "bool",
-				"name": "",
-				"type": "bool"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"stateMutability": "payable",
-		"type": "receive"
-	}
-]
+func got_timestamp(callback):
+	print(callback["result"])
 
-
-
-var GAME_TOKEN_ABI = [
-	{
-		"inputs": [],
-		"stateMutability": "nonpayable",
-		"type": "constructor"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "spender",
-				"type": "address"
-			},
-			{
-				"internalType": "uint256",
-				"name": "allowance",
-				"type": "uint256"
-			},
-			{
-				"internalType": "uint256",
-				"name": "needed",
-				"type": "uint256"
-			}
-		],
-		"name": "ERC20InsufficientAllowance",
-		"type": "error"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "sender",
-				"type": "address"
-			},
-			{
-				"internalType": "uint256",
-				"name": "balance",
-				"type": "uint256"
-			},
-			{
-				"internalType": "uint256",
-				"name": "needed",
-				"type": "uint256"
-			}
-		],
-		"name": "ERC20InsufficientBalance",
-		"type": "error"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "approver",
-				"type": "address"
-			}
-		],
-		"name": "ERC20InvalidApprover",
-		"type": "error"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "receiver",
-				"type": "address"
-			}
-		],
-		"name": "ERC20InvalidReceiver",
-		"type": "error"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "sender",
-				"type": "address"
-			}
-		],
-		"name": "ERC20InvalidSender",
-		"type": "error"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "spender",
-				"type": "address"
-			}
-		],
-		"name": "ERC20InvalidSpender",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "TransferFailed",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "ZeroAddress",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "ZeroAmount",
-		"type": "error"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": true,
-				"internalType": "address",
-				"name": "owner",
-				"type": "address"
-			},
-			{
-				"indexed": true,
-				"internalType": "address",
-				"name": "spender",
-				"type": "address"
-			},
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "value",
-				"type": "uint256"
-			}
-		],
-		"name": "Approval",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": true,
-				"internalType": "address",
-				"name": "depositContract",
-				"type": "address"
-			},
-			{
-				"indexed": true,
-				"internalType": "address",
-				"name": "recipient",
-				"type": "address"
-			},
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "amount",
-				"type": "uint256"
-			}
-		],
-		"name": "Deposited",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": true,
-				"internalType": "address",
-				"name": "from",
-				"type": "address"
-			},
-			{
-				"indexed": true,
-				"internalType": "address",
-				"name": "to",
-				"type": "address"
-			},
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "value",
-				"type": "uint256"
-			}
-		],
-		"name": "Transfer",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": true,
-				"internalType": "address",
-				"name": "user",
-				"type": "address"
-			},
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "amount",
-				"type": "uint256"
-			}
-		],
-		"name": "Withdrawn",
-		"type": "event"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "owner",
-				"type": "address"
-			},
-			{
-				"internalType": "address",
-				"name": "spender",
-				"type": "address"
-			}
-		],
-		"name": "allowance",
-		"outputs": [
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "spender",
-				"type": "address"
-			},
-			{
-				"internalType": "uint256",
-				"name": "value",
-				"type": "uint256"
-			}
-		],
-		"name": "approve",
-		"outputs": [
-			{
-				"internalType": "bool",
-				"name": "",
-				"type": "bool"
-			}
-		],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "account",
-				"type": "address"
-			}
-		],
-		"name": "balanceOf",
-		"outputs": [
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "uint256",
-				"name": "amount",
-				"type": "uint256"
-			},
-			{
-				"internalType": "address",
-				"name": "recipient",
-				"type": "address"
-			}
-		],
-		"name": "burnAndWithdraw",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "decimals",
-		"outputs": [
-			{
-				"internalType": "uint8",
-				"name": "",
-				"type": "uint8"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "isGameToken",
-		"outputs": [
-			{
-				"internalType": "bool",
-				"name": "",
-				"type": "bool"
-			}
-		],
-		"stateMutability": "pure",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "recipient",
-				"type": "address"
-			},
-			{
-				"internalType": "address",
-				"name": "depositContract",
-				"type": "address"
-			}
-		],
-		"name": "mintAndDeposit",
-		"outputs": [],
-		"stateMutability": "payable",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "name",
-		"outputs": [
-			{
-				"internalType": "string",
-				"name": "",
-				"type": "string"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "symbol",
-		"outputs": [
-			{
-				"internalType": "string",
-				"name": "",
-				"type": "string"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "totalSupply",
-		"outputs": [
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "to",
-				"type": "address"
-			},
-			{
-				"internalType": "uint256",
-				"name": "value",
-				"type": "uint256"
-			}
-		],
-		"name": "transfer",
-		"outputs": [
-			{
-				"internalType": "bool",
-				"name": "",
-				"type": "bool"
-			}
-		],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "from",
-				"type": "address"
-			},
-			{
-				"internalType": "address",
-				"name": "to",
-				"type": "address"
-			},
-			{
-				"internalType": "uint256",
-				"name": "value",
-				"type": "uint256"
-			}
-		],
-		"name": "transferFrom",
-		"outputs": [
-			{
-				"internalType": "bool",
-				"name": "",
-				"type": "bool"
-			}
-		],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"stateMutability": "payable",
-		"type": "receive"
-	}
-]
 
 
 
 ## UI HELPERS
 
+
+# UI and State Variables
+var connect_button_position = Vector2(50,25)
+var prompt_connect = true
+var must_copy_hand = true
+var PREGAME_STATE = ""
+var in_game = false
+
+
 func fade(outin, canvas, callback=null):
+	
 	var target = 1
 	
 	# Become visible
@@ -2727,3 +1126,20 @@ func remove_overlay():
 	for submenu in $Overlay.get_children():
 		submenu.visible = false
 	$Overlay.visible = false
+
+func reset_states():
+	$Info.modulate.a = 1
+	$Info.visible = true
+	$Curtain.modulate.a = 1
+	fade("OUT", $Curtain)
+	poll_timer = 1.5
+	status_poll_timer = 4
+	in_game = false
+	PREGAME_STATE = ""
+	reset_prompts()
+	remove_overlay()
+	reset_game_ui()
+
+func reset_game_ui():
+	$GameInfo.modulate.a = 0
+	$GameInfo.visible = false

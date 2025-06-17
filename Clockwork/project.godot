@@ -20,6 +20,7 @@ config/icon="res://sprites/icon.svg"
 Contract="*res://addons/cactus.godotethersweb/singletons/Contract.gd"
 EthersWeb="*res://addons/cactus.godotethersweb/singletons/Ethers.gd"
 Calldata="*res://addons/cactus.godotethersweb/singletons/Calldata.gd"
+GameAbi="*res://singletons/GameABI.gd"
 
 [display]
 

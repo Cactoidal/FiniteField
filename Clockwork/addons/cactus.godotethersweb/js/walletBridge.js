@@ -59,6 +59,27 @@ window.walletBridge = {
 
   },
 
+  getCurrentBlockTimestamp: async function(success, failure, callback) {
+    try {
+      // Ask MetaMask for the latest block
+      const latestBlock = await window.ethereum.request({
+        method: 'eth_getBlockByNumber',
+        params: ['latest', false], // false = don't return full transaction objects
+      });
+  
+      // Convert hex timestamp to decimal
+      timestamp = parseInt(latestBlock.timestamp, 16);
+  
+      console.log("Latest block timestamp:", timestamp);
+  
+      success(callback, timestamp);
+
+    } catch (error) {
+      console.error("Error fetching block timestamp:", error);
+      failure(callback, _error.code, _error.message)
+    }
+  },
+
   
   poll_accounts: async function(success, failure, callback) {
     try {

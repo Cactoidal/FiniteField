@@ -208,6 +208,10 @@ func end_listen(
 	)
 
 
+func get_block_timestamp(callback="{}"):
+	window.walletBridge.getCurrentBlockTimestamp(success_callback, error_callback, callback)
+
+
 # "Transaction logs" and "event streams" are defined by providing
 # a callback node and a callback function.  Whenever a transaction receipt
 # or event is received, they will be transmitted to any registered 

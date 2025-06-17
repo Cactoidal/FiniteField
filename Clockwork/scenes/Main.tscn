@@ -45,6 +45,15 @@ size_flags_vertical = 0
 mouse_default_cursor_shape = 2
 text = "Connect Wallet "
 
+[node name="Log" type="TextEdit" parent="."]
+modulate = Color(1, 1, 1, 0)
+offset_left = 370.0
+offset_top = 542.0
+offset_right = 1142.0
+offset_bottom = 636.0
+editable = false
+wrap_mode = 1
+
 [node name="Info" type="Control" parent="."]
 modulate = Color(1, 1, 1, 0)
 anchors_preset = 0
@@ -82,13 +91,54 @@ offset_bottom = 637.0
 mouse_default_cursor_shape = 2
 text = "Withdraw ETH"
 
-[node name="Log" type="TextEdit" parent="Info"]
-offset_left = 370.0
-offset_top = 542.0
-offset_right = 1142.0
-offset_bottom = 636.0
-editable = false
-wrap_mode = 1
+[node name="GameInfo" type="Control" parent="."]
+modulate = Color(1, 1, 1, 0)
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+mouse_filter = 2
+
+[node name="Bid" type="Label" parent="GameInfo"]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 18.0
+offset_top = 525.0
+offset_right = 152.0
+offset_bottom = 548.0
+grow_vertical = 0
+text = "Your bid: 0 / 1000"
+
+[node name="TopBid" type="Label" parent="GameInfo"]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 18.0
+offset_top = 491.0
+offset_right = 149.0
+offset_bottom = 514.0
+grow_vertical = 0
+text = "TOP BID: 0"
+
+[node name="Raise" type="Button" parent="GameInfo"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 595.0
+offset_right = 216.0
+offset_bottom = 637.0
+mouse_default_cursor_shape = 2
+text = "Raise (100 Tokens)"
+
+[node name="Fold" type="Button" parent="GameInfo"]
+layout_mode = 0
+offset_left = 224.0
+offset_top = 595.0
+offset_right = 356.0
+offset_bottom = 637.0
+mouse_default_cursor_shape = 2
+text = "Fold"
 
 [node name="Prompt" type="Control" parent="."]
 modulate = Color(1, 1, 1, 0)
@@ -176,6 +226,7 @@ mouse_default_cursor_shape = 2
 text = "Rejoin Game"
 
 [node name="Curtain" type="ColorRect" parent="."]
+visible = false
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
