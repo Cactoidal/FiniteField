@@ -659,35 +659,33 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         player.hasRequestedSeed = false;
     }
 
-    function getVRFSwapSeed(address playerAddress, address gameToken) public view returns(uint256) {
-        playerStatus storage player = tokenPlayerStatus[playerAddress][gameToken];
-        uint gameId = player.gameId;
-        uint playerIndex = player.playerIndex;
 
-        return gameSessions[gameId].vrfSwapSeeds[playerIndex];
-    }
-
+    // Used by Godot to monitor player states during the game
     function getAllPlayers(uint gameId) public view returns(
         address[TABLE_SIZE] memory, 
         address[TABLE_SIZE] memory, 
+        uint256[TABLE_SIZE] memory,
         uint256[TABLE_SIZE] memory,
         uint256[TABLE_SIZE] memory) 
         {
         game storage session = gameSessions[gameId];
 
+        address gameToken = session.gameToken;
         address[TABLE_SIZE] memory players;
         address[TABLE_SIZE] memory exited;
         uint256[TABLE_SIZE] memory vrfSwapSeeds;
         uint256[TABLE_SIZE] memory scores;
+        uint256[TABLE_SIZE] memory totalBids;
 
         for (uint i = 0; i < TABLE_SIZE; i++) {
             players[i] = session.players[i];
             exited[i] = session.exited[i];
             vrfSwapSeeds[i] = session.vrfSwapSeeds[i];
             scores[i] = session.scores[i];
+            totalBids[i] = tokenPlayerStatus[players[i]][gameToken].totalBidAmount;
         }
 
-        return (players, exited, vrfSwapSeeds, scores);
+        return (players, exited, vrfSwapSeeds, scores, totalBids);
     }
 
 
