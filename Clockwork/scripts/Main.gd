@@ -4,17 +4,10 @@ extends Control
 @onready var GAME_LOGIC_ABI = GameAbi.GAME_LOGIC_ABI
 @onready var GAME_TOKEN_ABI = GameAbi.GAME_TOKEN_ABI
 
-#var test_network = "Ethereum Sepolia"
-#
-## ETHEREUM SEPOLIA
-#const SEPOLIA_GAME_LOGIC_ADDRESS = "0x5507ea3aAB6c1EF18B1AE24f29e6D207CE64905b"
-#const SEPOLIA_GAME_TOKEN_ADDRESS = "0x9acF3472557482091Fe76c2D08F82819Ab9a28eb"
-
-
 var test_network = "Base Sepolia"
 
 # BASE SEPOLIA
-const SEPOLIA_GAME_LOGIC_ADDRESS = "0x396f6eB93cAdFa0ec72E74E864f3017421594f13"
+const SEPOLIA_GAME_LOGIC_ADDRESS = "0xec53BcfaA6a28F4D406538F8Bbf825E98Cf81da3"
 const SEPOLIA_GAME_TOKEN_ADDRESS = "0x0C8776B3427bBab1F4A4c599c153781598758495"
 
 
@@ -79,8 +72,8 @@ func _ready():
 	load_and_attach(zk_bridge_filepath)
 	
 	# DEBUG
-	#print(window.walletBridge.getFunctionSelector("InvalidDiscard()"))
-	#0xb248b448
+	print(window.walletBridge.getFunctionSelector("InvalidHash()"))
+	#0x0af806e0
 
 
 func connect_buttons():
@@ -151,8 +144,9 @@ func _process(delta):
 			poll_timer = 1.5
 		
 		if game_poll_timer < 0:
-			get_game_session(player_status[connected_wallet]["game_id"])
-
+			var game_id = player_status[connected_wallet]["game_id"]
+			get_game_session(game_id)
+			get_game_player_info(game_id)
 
 
 func polled_accounts(callback):
@@ -339,7 +333,7 @@ func prompt_join_game():
 
 func get_hand():
 	if must_copy_hand:
-		var hand = generate_hand(player_status[connected_wallet]["vrf_seed"], get_random_local_seed(), generate_nullifier_set(hand_size))
+		var hand = generate_hand(player_status[connected_wallet]["vrf_seed"], generate_nullifier_set(hand_size), get_random_local_seed())
 		player_status[connected_wallet]["hand"] = hand
 		$Overlay/Warning/HandText.text = str(hand)
 		$Overlay/Warning.visible = true
@@ -543,6 +537,25 @@ func got_vrf_swap_seed(callback):
 			$GameInfo/SwapWindow/SwapActuator.text = "Finish Swap"
 			#DEBUG
 			prove_swap()
+
+
+func get_game_player_info(game_id):
+	var callback = EthersWeb.create_callback(self, "got_game_player_info")
+
+	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "getAllPlayers", [game_id]) 
+	
+	EthersWeb.read_from_contract(
+		test_network,
+		SEPOLIA_GAME_LOGIC_ADDRESS, 
+		data,
+		callback
+		)
+
+func got_game_player_info(callback):
+	if has_error(callback):
+		return
+	
+	print(callback)
 
 	
 func actuate_swap():
@@ -878,9 +891,6 @@ func get_hand_zk_proof():
 	
 	"gameToken": SEPOLIA_GAME_TOKEN_ADDRESS
   	}
-	
-	# Cache the hand locally for later use
-	#hand = generate_hand(inputs["vrfSeed"], inputs["fixedSeed"], inputs["nullifiers"])
 
 	# Must define public_types for the callback
 	var public_types  = [
@@ -994,7 +1004,6 @@ func prove_swap():
 	var hand = player_status[connected_wallet]["hand"]
 
 	var vrf_swap_seed = hand["vrf_swap_seed"]
-	var fixed_seed = get_random_local_seed()
 	var old_cards = hand["card_hashes"]
 	var indices = selected_card_indices
 	var new_nullifiers = generate_nullifier_set(2)
@@ -1002,12 +1011,18 @@ func prove_swap():
 	
 	
 	# DEBUG
-	# Needs to be done after the transaction is confirmed
+	# Not implemented yet, but, he contract must require the user 
+	# to submit a proof  after requesting the swap, otherwise 
+	# the user could refuse the cards they are dealt.  Therefore, 
+	# it's okay to set the new hand here, before the transaction is 
+	# actually confirmed, because the old hand is no longer
+	# usable anyway.
+	
 	#     #     #     #     #     #     #     #     #     #
 	hand["nullifiers"][indices[0]] = new_nullifiers[0]
 	hand["nullifiers"][indices[1]] = new_nullifiers[1]
 	
-	var drawn_cards = generate_hand(vrf_swap_seed, fixed_seed, new_nullifiers)
+	var drawn_cards = generate_hand(vrf_swap_seed, new_nullifiers)
 	
 	hand["cards"][indices[0]] = drawn_cards["cards"][0]
 	hand["cards"][indices[1]] = drawn_cards["cards"][1]
@@ -1024,8 +1039,6 @@ func prove_swap():
 	var inputs = {
 		
 		"vrfSeed": vrf_swap_seed,
-		
-		"fixedSeed": fixed_seed,
 		
 		"gameToken": SEPOLIA_GAME_TOKEN_ADDRESS,
 		
@@ -1151,28 +1164,37 @@ func withdraw_eth():
 func calculate_hands():
 	var nullifiers = generate_nullifier_set(hand_size)
 	for local_seed in local_seeds:
-		generate_hand(player_status[connected_wallet]["vrf_seed"], local_seed, nullifiers)
+		generate_hand(player_status[connected_wallet]["vrf_seed"], nullifiers, local_seed)
 		
 
 # Predict hands using the set of local seeds
-func generate_hand(_vrf_seed, fixed_seed, nullifiers):
+func generate_hand(_vrf_seed, nullifiers, fixed_seed=null):
 	
 	var _hand_size = nullifiers.size()
+	
+	var _deck = deck.duplicate()
 	
 	# Apply the field modulus before hashing, otherwise large values 
 	# won't validate properly
 	var vrf_seed = window.zkBridge.bigNumberModulus(_vrf_seed, FIELD_MODULUS)
 	
-	var seed_hash = poseidon([vrf_seed, fixed_seed])
+	# Swaps just use the vrf seed, while drawing a hand combines the
+	# vrf seed with a fixed local seed
+	var seed_hash = vrf_seed
+	if fixed_seed:
+		seed_hash = poseidon([vrf_seed, fixed_seed])
+	else:
+		# If it is a swap, append 21 to the deck
+		_deck.push_back("21")
 	
 	var picked_cards = []
 	
 	for card_draw in range(_hand_size):
 		seed_hash = poseidon([seed_hash])
 	
-		var index = int(window.zkBridge.bigNumberModulus(seed_hash, deck.size()))
+		var index = int(window.zkBridge.bigNumberModulus(seed_hash, _deck.size()))
 	
-		picked_cards.push_back(deck[index])
+		picked_cards.push_back(_deck[index])
 	
 	var cards = []
 	var card_hashes = []
@@ -1222,7 +1244,18 @@ func get_random_local_seed():
 
 # From contract logic 
 func predict_score(obj_attractor, obj_color, cards):
+	
+	# Determine if the score will be inverted
+	var inverse = false
+	for card in cards:
+		if card == 21:
+			if inverse == false:
+				inverse = true
+			else:
+				inverse = false
+				
 	var score = 0
+	
 	for card in cards:
 		var card_color = 1
 		if card > 10:
@@ -1242,7 +1275,17 @@ func predict_score(obj_attractor, obj_color, cards):
 		if card_color == obj_color:
 			color_bonus = 2
 		
-		score += (10 - diff) * color_bonus
+		# Inverse cards have no suit and are not
+		# affected by the attractor
+		if card == 11:
+			score += 11
+		else:
+			# Cards closest to the attractor have a higher base score;
+			# cards of the objective color have their base score multiplied by 2
+			score += (10 - diff) * color_bonus
+	
+	if inverse:
+		score = 100 - score
 	
 	return score
 
@@ -1268,7 +1311,7 @@ func got_timestamp(callback):
 		entered_prove_phase = true
 		end_play_phase()
 	
-	if time_elapsed > 900 && !entered_conclusion_phase:
+	if time_elapsed > 600 && !entered_conclusion_phase:
 		entered_conclusion_phase = true
 		conclusion_phase()
 
@@ -1296,6 +1339,10 @@ var must_copy_hand = true
 var PREGAME_STATE = ""
 var in_game = false
 var GAME_STATE = ""
+
+# DEBUG
+# Needs a flow that confirms these things in sequence and sets the state,
+# instead of relying on a bunch of individual booleans.
 var got_game_objective = false
 var selected_card_indices = []
 var initiated_swap = false

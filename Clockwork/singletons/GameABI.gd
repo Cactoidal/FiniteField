@@ -1029,7 +1029,7 @@ var GAME_LOGIC_ABI = [
 		"inputs": [
 			{
 				"internalType": "uint256",
-				"name": "vrfSeed",
+				"name": "objVRFSeed",
 				"type": "uint256"
 			},
 			{

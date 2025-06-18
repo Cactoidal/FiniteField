@@ -23,6 +23,10 @@ func alter_appearance():
 	if display_num > 10:
 		suit_color = Color.SILVER
 		display_num -= 10
+		
+		# Inverse cards are a separate color
+		if display_num == 11:
+			Color.DARK_ORANGE
 	else:
 		suit_color = Color.BLUE
 	

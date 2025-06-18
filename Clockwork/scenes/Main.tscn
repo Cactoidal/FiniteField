@@ -80,7 +80,7 @@ offset_top = 595.0
 offset_right = 216.0
 offset_bottom = 637.0
 mouse_default_cursor_shape = 2
-text = "Buy Tokens (0.001 ETH)"
+text = "Buy Tokens (0.0001 ETH)"
 
 [node name="WithdrawETH" type="Button" parent="Info"]
 layout_mode = 0
