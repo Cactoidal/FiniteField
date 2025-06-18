@@ -117,6 +117,7 @@ func got_account_list(callback):
 		fade("OUT", $Title, move_connect_button)
 		fade("IN", $Log)
 		fade("IN", $Info, fade.bind("IN", $Prompt))
+		$Prompt.visible = true
 		
 		print_log("Retrieving player info for " + connected_wallet)
 		get_player_status(connected_wallet)
@@ -1185,7 +1186,7 @@ func generate_hand(_vrf_seed, nullifiers, fixed_seed=null):
 		seed_hash = poseidon([vrf_seed, fixed_seed])
 	else:
 		# If it is a swap, append 21 to the deck
-		_deck.push_back("21")
+		_deck.push_back(21)
 	
 	var picked_cards = []
 	
