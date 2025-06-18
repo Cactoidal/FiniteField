@@ -7,7 +7,7 @@ extends Control
 var test_network = "Base Sepolia"
 
 # BASE SEPOLIA
-const SEPOLIA_GAME_LOGIC_ADDRESS = "0xec53BcfaA6a28F4D406538F8Bbf825E98Cf81da3"
+const SEPOLIA_GAME_LOGIC_ADDRESS = "0x4F7F90c26dcBB84e440fd97649f6af9C1A442dD2"
 const SEPOLIA_GAME_TOKEN_ADDRESS = "0x0C8776B3427bBab1F4A4c599c153781598758495"
 
 
@@ -17,6 +17,7 @@ var connected_wallet
 # Player statuses are mapped to wallet addresses as they are detected
 var player_status = {}
 
+# Game states are mapped to wallet addresses while they are ongoing
 var game_session = {}
 
 @onready var card_scene = preload("res://scenes/Card.tscn")
@@ -72,9 +73,8 @@ func _ready():
 	load_and_attach(zk_bridge_filepath)
 	
 	# DEBUG
-	print(window.walletBridge.getFunctionSelector("InvalidHash()"))
-	#0x0af806e0
-
+	#print(window.walletBridge.getFunctionSelector("HaveNotSwapped()"))
+	#0xe2f5f82f
 
 func connect_buttons():
 	$ConnectWallet.connect("pressed", connect_wallet)
@@ -146,8 +146,11 @@ func _process(delta):
 		
 		if game_poll_timer < 0:
 			var game_id = player_status[connected_wallet]["game_id"]
-			get_game_session(game_id)
-			get_game_player_info(game_id)
+		
+			if !game_session[connected_wallet]["game_started"]:
+				get_game_session(game_id)
+			else:
+				get_game_player_info(game_id)
 
 
 func polled_accounts(callback):
@@ -348,6 +351,7 @@ func copy_hand():
 	$Overlay/Warning.visible = false
 	$Overlay.visible = false
 	must_copy_hand = false
+	get_hand_zk_proof()
 
 
 func restore_hand():
@@ -402,9 +406,8 @@ func select_game_mode():
 func join_game():
 	$Info.visible = false
 	in_game = true
-	$GameInfo.visible = true
-	fade("IN", $GameInfo)
 	splay_cards()
+	initialize_game_state()
 	get_game_session(player_status[connected_wallet]["game_id"])
 
 
@@ -431,9 +434,13 @@ func splay_cards():
 
 
 func update_card_indices(_index):
-	if initiated_swap || player_status[connected_wallet]["hand"]["vrf_swap_seed"] != "0":
+	# DEBUG
+	# Make more readable
+	if game_session[connected_wallet]["initiated_swap"] || player_status[connected_wallet]["hand"]["vrf_swap_seed"] != "0":
 		print_log("Already selected cards for swap")
 		return
+	
+	var selected_card_indices = game_session[connected_wallet]["selected_card_indices"]
 		
 	if _index in selected_card_indices:
 		print_log("Already selected that card")
@@ -457,7 +464,7 @@ func update_card_indices(_index):
 func get_game_session(game_id):
 	game_poll_timer = 4
 	
-	var callback = EthersWeb.create_callback(self, "got_game_info")
+	var callback = EthersWeb.create_callback(self, "got_game_session")
 
 	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "gameSessions", [game_id]) 
 	
@@ -469,78 +476,56 @@ func get_game_session(game_id):
 		)
 
 
-func got_game_info(callback):
+func got_game_session(callback):
 	if has_error(callback):
 		return
 	
-	game_session["gameToken"] = callback["result"][0]
-	game_session["startTimestamp"] = callback["result"][1]
-	game_session["objectiveSeed"] = callback["result"][2]
-	game_session["maximumSpend"] = callback["result"][3]
-	game_session["totalPot"] = callback["result"][4]
-	game_session["highBid"] = callback["result"][5]
-	game_session["hasConcluded"] = callback["result"][6]
+	game_session[connected_wallet]["gameToken"] = callback["result"][0]
+	game_session[connected_wallet]["startTimestamp"] = callback["result"][1]
+	game_session[connected_wallet]["objectiveSeed"] = callback["result"][2]
+	game_session[connected_wallet]["maximumSpend"] = callback["result"][3]
+	game_session[connected_wallet]["totalPot"] = callback["result"][4]
+	game_session[connected_wallet]["highBid"] = callback["result"][5]
+	game_session[connected_wallet]["hasConcluded"] = callback["result"][6]
 	
-	$GameInfo/TopBid.text = "TOP BID: " + str(game_session["highBid"])
+	$GameInfo/TopBid.text = "TOP BID: " + str(game_session[connected_wallet]["highBid"])
 	
 	# Initialize timeElapsed.
 	if !"timeElapsed" in game_session:
-		game_session["timeElapsed"] = 0
- 	
-	# Check the time remaining.
-	if game_session["startTimestamp"] != "0":
-		get_time_limit(game_session["startTimestamp"])
+		game_session[connected_wallet]["timeElapsed"] = 0
 	
-	# Check for the objective.
-	if game_session["objectiveSeed"] != "0":
-		if !got_game_objective:
-			got_game_objective = true
+	# Check for the objective; if it is non-zero, the game has started.
+	if game_session[connected_wallet]["objectiveSeed"] != "0":
+		if !game_session[connected_wallet]["got_game_objective"]:
+			game_session[connected_wallet]["got_game_objective"] = true
+			
+			game_session[connected_wallet]["objective"] = get_objective(game_session[connected_wallet]["objectiveSeed"])
+			
+			var objective_attractor = game_session[connected_wallet]["objective"]["attractor"]
+			var objective_color = game_session[connected_wallet]["objective"]["color"]
+			var cards = player_status[connected_wallet]["hand"]["cards"]
+			var predicted_score = predict_score(objective_attractor, objective_color, cards) 
+			
+			game_session[connected_wallet]["predicted_score"] = predicted_score
+	
+			# DEBUG
+			var color_text = "Blue"
+			if objective_color == 2:
+				color_text = "Silver"
+			$GameInfo/Objective.text = "Attractor: " + str(objective_attractor) + "\nColor: " + color_text + "\nPredicted Score: " + str(predicted_score)
+			
 			print_log("Game has started")
-	
-		# If the objective has been found, the game has started.
-		# If less than 2 minutes have elapsed, poll for the
-		# vrfSwapSeed.
-		var vrf_swap_seed = player_status[connected_wallet]["hand"]["vrf_swap_seed"]
-		if vrf_swap_seed == "0":
-			if game_session["timeElapsed"] > 120:
-				if !initiated_swap:
-					# If seed hasn't been obtained or requested during the 2 minute window,
-					# remove the option to swap
-					fade("OUT", $GameInfo/SwapWindow)
-				else:
-					get_vrf_swap_seed()
-			else:
-				get_vrf_swap_seed()
+			game_session[connected_wallet]["game_started"] = true
+			get_game_player_info(player_status[connected_wallet]["game_id"])
+			$GameInfo.visible = true
+			fade("IN", $GameInfo)
+		
+		
 
-
-func get_vrf_swap_seed():
-	var callback = EthersWeb.create_callback(self, "got_vrf_swap_seed")
-
-	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "getVRFSwapSeed", [connected_wallet, SEPOLIA_GAME_TOKEN_ADDRESS]) 
-	
-	EthersWeb.read_from_contract(
-		test_network,
-		SEPOLIA_GAME_LOGIC_ADDRESS, 
-		data,
-		callback
-		)
-
-func got_vrf_swap_seed(callback):
-	if has_error(callback):
-		return
-	
-	var vrf_swap_seed = callback["result"][0]
-	player_status[connected_wallet]["hand"]["vrf_swap_seed"] = vrf_swap_seed
-	
-	if vrf_swap_seed != "0":
-		if $GameInfo/SwapWindow/SwapActuator.text != "Finish Swap":
-			print_log("VRF Swap Seed received.  Now prove the swap.")
-			$GameInfo/SwapWindow/SwapActuator.text = "Finish Swap"
-			#DEBUG
-			prove_swap()
 
 
 func get_game_player_info(game_id):
+	game_poll_timer = 4
 	var callback = EthersWeb.create_callback(self, "got_game_player_info")
 
 	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "getAllPlayers", [game_id]) 
@@ -552,17 +537,45 @@ func get_game_player_info(game_id):
 		callback
 		)
 
+
 func got_game_player_info(callback):
 	if has_error(callback):
 		return
 	
-	print(callback)
+	var players = callback["result"][0]
+	var exited = callback["result"][1]
+	var vrfSwapSeeds = callback["result"][2]
+	var scores = callback["result"][3]
+	var totalBids = callback["result"][4]
+	
+	
+	# Check the time remaining.
+	get_time_limit(game_session[connected_wallet]["startTimestamp"])
+	
+	var player_index = player_status[connected_wallet]["player_index"]
+
+
+	var vrf_swap_seed = vrfSwapSeeds[int(player_index)]
+	
+	if vrf_swap_seed == "0":
+		if game_session[connected_wallet]["timeElapsed"] > 120:
+			if !game_session[connected_wallet]["initiated_swap"]:
+					# If seed hasn't been obtained or requested during the 2 minute window,
+					# remove the option to swap
+				fade("OUT", $GameInfo/SwapWindow)
+	else:
+		if $GameInfo/SwapWindow/SwapActuator.text != "Finish Swap":
+			print_log("VRF Swap Seed received.  Now prove the swap.")
+			$GameInfo/SwapWindow/SwapActuator.text = "Finish Swap"
+			prove_swap()
+
+	
 
 	
 func actuate_swap():
 	
 	if $GameInfo/SwapWindow/SwapActuator.text == "Initiate Swap":
-		if selected_card_indices.size() == 2:
+		if game_session[connected_wallet]["selected_card_indices"].size() == 2:
 			print_log("Initiating swap...")
 			swap_cards()
 		else:
@@ -609,8 +622,8 @@ func receive_tx_receipt(tx_receipt):
 			
 			# After successfully proving the swap, update the cards
 			# and prompt the player to copy the new hand data.
-			if initiated_swap:
-				initiated_swap = false
+			if game_session[connected_wallet]["initiated_swap"]:
+				game_session[connected_wallet]["initiated_swap"] = false
 				$GameInfo/SwapWindow/SwapActuator.text = "Copy Hand"
 				$GameInfo/SwapWindow/HandText.text = str(player_status[connected_wallet]["hand"])
 				var index = 0
@@ -621,7 +634,6 @@ func receive_tx_receipt(tx_receipt):
 					
 					
 		
-	
 	if status == "0":
 		print_log("Transaction failed")
 		
@@ -750,7 +762,7 @@ func await_transaction(callback):
 			"START_GAME":
 				pass
 			"INITIATE_SWAP":
-				initiated_swap = true
+				game_session[connected_wallet]["initiated_swap"] = true
 				$GameInfo/SwapWindow/SwapActuator.text = "Awaiting VRF"
 				print_log("Waiting for swap seed...")
 		
@@ -956,10 +968,8 @@ func fold():
 
 
 func swap_cards():
-	
-	#DEBUG
-	#Make sure sort() is consistent
-	var indices = selected_card_indices
+
+	var indices = game_session[connected_wallet]["selected_card_indices"]
 	indices.sort()
 	
 	var nullifier = generate_nullifier_set(1)[0]
@@ -1006,7 +1016,7 @@ func prove_swap():
 
 	var vrf_swap_seed = hand["vrf_swap_seed"]
 	var old_cards = hand["card_hashes"]
-	var indices = selected_card_indices
+	var indices = game_session[connected_wallet]["selected_card_indices"]
 	var new_nullifiers = generate_nullifier_set(2)
 	var discard_nullifier = hand["discarded_cards"]["nullifier"]
 	
@@ -1241,7 +1251,17 @@ func get_random_local_seed():
 	var index = window.zkBridge.bigNumberModulus(bytes, 20)
 	var local_seed = local_seeds[int(index)]
 	return local_seed
+
+
+func get_objective(vrf_seed):
+	var obj_attractor = int(window.zkBridge.bigNumberModulus(vrf_seed, 10)) + 1
+	var obj_color = int(window.zkBridge.bigNumberModulus(vrf_seed, 2)) + 1
 	
+	var objective = {
+		"attractor": obj_attractor,
+		"color": obj_color
+	}
+	return objective
 
 # From contract logic 
 func predict_score(obj_attractor, obj_color, cards):
@@ -1300,7 +1320,7 @@ func got_timestamp(callback):
 		return
 
 	var time_elapsed = int(callback["result"]) - int(callback["start_timestamp"])
-	game_session["timeElapsed"] = time_elapsed
+	game_session[connected_wallet]["timeElapsed"] = time_elapsed
 	
 	# DEBUG
 	var time_remaining = 240 - time_elapsed
@@ -1308,12 +1328,12 @@ func got_timestamp(callback):
 	$GameInfo/Time.visible = true
 	$GameInfo/Time.text = "TIME REMAINING: " + str(time_remaining)
 	
-	if time_elapsed > 240 && !entered_prove_phase:
-		entered_prove_phase = true
+	if time_elapsed > 240 && !game_session[connected_wallet]["entered_prove_phase"]:
+		game_session[connected_wallet]["entered_prove_phase"] = true
 		end_play_phase()
 	
-	if time_elapsed > 600 && !entered_conclusion_phase:
-		entered_conclusion_phase = true
+	if time_elapsed > 600 && !game_session[connected_wallet]["entered_conclusion_phase"]:
+		game_session[connected_wallet]["entered_conclusion_phase"] = true
 		conclusion_phase()
 
 
@@ -1339,16 +1359,18 @@ var prompt_connect = true
 var must_copy_hand = true
 var PREGAME_STATE = ""
 var in_game = false
-var GAME_STATE = ""
 
-# DEBUG
-# Needs a flow that confirms these things in sequence and sets the state,
-# instead of relying on a bunch of individual booleans.
-var got_game_objective = false
-var selected_card_indices = []
-var initiated_swap = false
-var entered_prove_phase = false
-var entered_conclusion_phase = false
+
+func initialize_game_state():
+	game_session[connected_wallet] = {
+		"game_started": false,
+		"got_game_objective": false,
+		"selected_card_indices": [],
+		"initiated_swap": false,
+		"entered_prove_phase": false,
+		"entered_conclusion_phase": false
+	}
+
 
 
 func fade(outin, canvas, callback=null):
@@ -1417,15 +1439,10 @@ func reset_game_ui():
 	$ConcludeGame.modulate.a = 0
 	$RevealCards.visible = false
 	$ConcludeGame.visible = false
+	$GameInfo/Objective.text = ""
 
 	
 	for card in $Cards.get_children():
 		card.queue_free()
-	selected_card_indices = []
-	GAME_STATE = ""
 	in_game = false
 	game_session = {}
-	got_game_objective = false
-	initiated_swap = false
-	entered_prove_phase = false
-	entered_conclusion_phase = false
