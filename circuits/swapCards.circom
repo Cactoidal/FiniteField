@@ -11,19 +11,18 @@ include "utils/comparators.circom";
 // the provided oldHandHash matches the on-chain handHash.
 
 // Proves that the newHandHash has been derived by changing cards found
-// in the oldHandHash, with randomness generated using ChainLink VRF 
-// and a local seed from a fixed set.
+// in the oldHandHash, with randomness generated using ChainLink VRF.
 
 // Like the drawHand circuit, contains hardcoded deck and local seed arrays.
+// This deck contains an extra card: 21, representing the inverse card,
+// which inverts the score of the entire hand.
 
 template Swap() {
     var handSize = 5;
     var drawSize = 2;
-    var deckSize = 20;
-    var localSeedCount = 20;
+    var deckSize = 21;
 
     signal input vrfSeed;
-    signal input fixedSeed;
     signal input gameToken;
 
     signal input oldCards[handSize];
@@ -46,23 +45,12 @@ template Swap() {
     }
     oldHandHash <== oldHandHasher.out;
 
-    // fixedSeed must be in the set of allowed local seeds.
-    component inSetCheck = InSet(localSeedCount, [948321578921, 323846237643, 29478234787, 947289484324, 4827847813436, 98432542473237, 56324278238234, 77238476429378, 10927437265398, 32589475384735, 87834727625345, 7723645230273, 298467856729, 233652987328, 2389572388357, 23858923387534, 1242398565735, 6875282937855, 82984325902750, 48547252957635743]);
-    inSetCheck.checkValue <== fixedSeed;
-    inSetCheck.out === 1;
-
-    // Hash the two seeds together.
-    component hasher = Poseidon(2);
-    hasher.inputs[0] <== vrfSeed;
-    hasher.inputs[1] <== fixedSeed;
-    var seedHash = hasher.out;
 
     // Select new cards from the deck.
-    component prng = PRNGSelect(drawSize, deckSize, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
-    prng._seed <== seedHash;
+    component prng = PRNGSelect(drawSize, deckSize, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]);
+    prng._seed <== vrfSeed;
     var selectedCards[drawSize] = prng.selected;
 
-    
 
     component cardHasher[drawSize];
     var cardHashes[drawSize];
