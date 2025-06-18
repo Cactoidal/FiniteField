@@ -160,10 +160,19 @@ text = "TOP BID: 0"
 layout_mode = 0
 offset_left = 8.0
 offset_top = 595.0
-offset_right = 216.0
+offset_right = 78.0
 offset_bottom = 637.0
 mouse_default_cursor_shape = 2
-text = "Raise (100 Tokens)"
+text = "Raise"
+
+[node name="RaiseAmount" type="LineEdit" parent="GameInfo"]
+layout_mode = 0
+offset_left = 83.0
+offset_top = 601.0
+offset_right = 151.562
+offset_bottom = 632.0
+text = "100"
+virtual_keyboard_type = 2
 
 [node name="Fold" type="Button" parent="GameInfo"]
 layout_mode = 0
@@ -323,6 +332,7 @@ mouse_default_cursor_shape = 2
 text = "Rejoin Game"
 
 [node name="Curtain" type="ColorRect" parent="."]
+visible = false
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0

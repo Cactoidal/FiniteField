@@ -7,7 +7,7 @@ extends Control
 var test_network = "Base Sepolia"
 
 # BASE SEPOLIA
-const SEPOLIA_GAME_LOGIC_ADDRESS = "0x4F7F90c26dcBB84e440fd97649f6af9C1A442dD2"
+const SEPOLIA_GAME_LOGIC_ADDRESS = "0x0eB6AA69FF74ff95089d48BAa14cfD75038eF140"
 const SEPOLIA_GAME_TOKEN_ADDRESS = "0x0C8776B3427bBab1F4A4c599c153781598758495"
 
 
@@ -300,7 +300,7 @@ func handle_pregame():
 
 
 func prompt_buy_seed():
-	print_log("Buy seed to generate hand")
+	print_log("Get tokens, then buy seed to generate hand")
 	fadein_button($Prompt/BuySeed)
 
 func wait_for_seed():
@@ -933,9 +933,14 @@ func start_game():
 
 
 func raise():
-	# DEBUG
-	# player would pass their own amount here
-	var amount = "100"
+	
+	var amount = int($GameInfo/RaiseAmount.text)
+	var total_bid_amount = int(player_status[connected_wallet]["total_bid_amount"])
+	var maximum_spend = int(game_session[connected_wallet]["maximumSpend"])
+	if amount + total_bid_amount > maximum_spend:
+		print_log("Bid exceeds maximum spend")
+		return
+	
 	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "raise", [SEPOLIA_GAME_TOKEN_ADDRESS, amount])
 	
 	var _callback = EthersWeb.create_callback(self, "await_transaction", {"tx_type": "RAISE"})
@@ -1408,6 +1413,7 @@ func reset_game_ui():
 	$GameInfo/SwapWindow/SwapActuator.text = "Initiate Swap"
 	$GameInfo/SwapWindow/HandText.text = ""
 	$GameInfo/SwapWindow.modulate.a = 1
+	$GameInfo/RaiseAmount.text = "100"
 	$RevealCards.modulate.a = 0
 	$ConcludeGame.modulate.a = 0
 	$RevealCards.visible = false
