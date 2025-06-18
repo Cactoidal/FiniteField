@@ -26,7 +26,7 @@ func alter_appearance():
 		
 		# Inverse cards are a separate color
 		if display_num == 11:
-			Color.DARK_ORANGE
+			suit_color = Color.DARK_ORANGE
 	else:
 		suit_color = Color.BLUE
 	
@@ -37,6 +37,10 @@ func alter_appearance():
 		$Color/Number.add_theme_color_override("font_color", Color.BLACK)
 	else:
 		$Color/Number.add_theme_color_override("font_color", Color.WHITE)
+	
+	modulate.a = 0
+	var tween = create_tween()
+	tween.tween_property(self, "modulate:a", 1, 1)
 
 
 func slide_out():

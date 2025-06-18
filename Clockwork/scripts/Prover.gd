@@ -1987,7 +1987,6 @@ var GAME_CONTRACT_ABI = [
 ]
 
 
-## STARMARK
 
 
 var GAME_TOKEN_ABI = [

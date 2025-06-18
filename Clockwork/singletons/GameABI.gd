@@ -711,6 +711,11 @@ var GAME_LOGIC_ABI = [
 				"internalType": "uint256[1]",
 				"name": "",
 				"type": "uint256[1]"
+			},
+			{
+				"internalType": "uint256[1]",
+				"name": "",
+				"type": "uint256[1]"
 			}
 		],
 		"stateMutability": "view",
@@ -764,30 +769,6 @@ var GAME_LOGIC_ABI = [
 			}
 		],
 		"stateMutability": "pure",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "playerAddress",
-				"type": "address"
-			},
-			{
-				"internalType": "address",
-				"name": "gameToken",
-				"type": "address"
-			}
-		],
-		"name": "getVRFSwapSeed",
-		"outputs": [
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"stateMutability": "view",
 		"type": "function"
 	},
 	{

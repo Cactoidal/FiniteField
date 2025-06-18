@@ -73,8 +73,8 @@ func _ready():
 	load_and_attach(zk_bridge_filepath)
 	
 	# DEBUG
-	#print(window.walletBridge.getFunctionSelector("HaveNotSwapped()"))
-	#0xe2f5f82f
+	#print(window.walletBridge.getFunctionSelector("InvalidHash()"))
+
 
 func connect_buttons():
 	$ConnectWallet.connect("pressed", connect_wallet)
@@ -300,7 +300,7 @@ func handle_pregame():
 
 
 func prompt_buy_seed():
-	print_log("Seed not found")
+	print_log("Buy seed to generate hand")
 	fadein_button($Prompt/BuySeed)
 
 func wait_for_seed():
@@ -308,7 +308,7 @@ func wait_for_seed():
 
 
 func prompt_prove_hand():
-	print_log("Hand not found")
+	print_log("Generate hand to join a game")
 	fadein_button($Prompt/GetHand)
 	must_copy_hand = true
 
@@ -324,7 +324,7 @@ func prompt_restore_hand():
 
 
 func prompt_create_game():
-	print_log("Game ID not found")
+	print_log("Create or join a game")
 	fadein_button($Prompt/StartGame)
 
 
@@ -434,9 +434,10 @@ func splay_cards():
 
 
 func update_card_indices(_index):
-	# DEBUG
-	# Make more readable
-	if game_session[connected_wallet]["initiated_swap"] || player_status[connected_wallet]["hand"]["vrf_swap_seed"] != "0":
+
+	var vrf_swap_seed = player_status[connected_wallet]["hand"]["vrf_swap_seed"]
+	
+	if game_session[connected_wallet]["initiated_swap"] || vrf_swap_seed!= "0":
 		print_log("Already selected cards for swap")
 		return
 	
@@ -480,42 +481,35 @@ func got_game_session(callback):
 	if has_error(callback):
 		return
 	
-	game_session[connected_wallet]["gameToken"] = callback["result"][0]
-	game_session[connected_wallet]["startTimestamp"] = callback["result"][1]
-	game_session[connected_wallet]["objectiveSeed"] = callback["result"][2]
-	game_session[connected_wallet]["maximumSpend"] = callback["result"][3]
-	game_session[connected_wallet]["totalPot"] = callback["result"][4]
-	game_session[connected_wallet]["highBid"] = callback["result"][5]
-	game_session[connected_wallet]["hasConcluded"] = callback["result"][6]
+	var session = game_session[connected_wallet]
 	
-	$GameInfo/TopBid.text = "TOP BID: " + str(game_session[connected_wallet]["highBid"])
+	session["gameToken"] = callback["result"][0]
+	session["startTimestamp"] = callback["result"][1]
+	session["objectiveSeed"] = callback["result"][2]
+	session["maximumSpend"] = callback["result"][3]
+	session["totalPot"] = callback["result"][4]
+	session["highBid"] = callback["result"][5]
+	session["hasConcluded"] = callback["result"][6]
+	
+	$GameInfo/TopBid.text = "TOP BID: " + str(session["highBid"])
 	
 	# Initialize timeElapsed.
 	if !"timeElapsed" in game_session:
-		game_session[connected_wallet]["timeElapsed"] = 0
+		session["timeElapsed"] = 0
 	
 	# Check for the objective; if it is non-zero, the game has started.
-	if game_session[connected_wallet]["objectiveSeed"] != "0":
-		if !game_session[connected_wallet]["got_game_objective"]:
-			game_session[connected_wallet]["got_game_objective"] = true
+	if session["objectiveSeed"] != "0":
+		if !session["got_game_objective"]:
+			session["got_game_objective"] = true
 			
-			game_session[connected_wallet]["objective"] = get_objective(game_session[connected_wallet]["objectiveSeed"])
+			session["objective"] = get_objective(session["objectiveSeed"])
 			
-			var objective_attractor = game_session[connected_wallet]["objective"]["attractor"]
-			var objective_color = game_session[connected_wallet]["objective"]["color"]
-			var cards = player_status[connected_wallet]["hand"]["cards"]
-			var predicted_score = predict_score(objective_attractor, objective_color, cards) 
+			# Update the UI with the objective and score prediction
+			update_score_prediction()
 			
-			game_session[connected_wallet]["predicted_score"] = predicted_score
-	
-			# DEBUG
-			var color_text = "Blue"
-			if objective_color == 2:
-				color_text = "Silver"
-			$GameInfo/Objective.text = "Attractor: " + str(objective_attractor) + "\nColor: " + color_text + "\nPredicted Score: " + str(predicted_score)
-			
+			# Load the game UI
 			print_log("Game has started")
-			game_session[connected_wallet]["game_started"] = true
+			session["game_started"] = true
 			get_game_player_info(player_status[connected_wallet]["game_id"])
 			$GameInfo.visible = true
 			fade("IN", $GameInfo)
@@ -548,23 +542,26 @@ func got_game_player_info(callback):
 	var scores = callback["result"][3]
 	var totalBids = callback["result"][4]
 	
+	var session = game_session[connected_wallet]
 	
 	# Check the time remaining.
-	get_time_limit(game_session[connected_wallet]["startTimestamp"])
+	get_time_limit(session["startTimestamp"])
 	
 	var player_index = player_status[connected_wallet]["player_index"]
 
 
 	var vrf_swap_seed = vrfSwapSeeds[int(player_index)]
+	player_status[connected_wallet]["hand"]["vrf_swap_seed"] = vrf_swap_seed
 	
 	if vrf_swap_seed == "0":
-		if game_session[connected_wallet]["timeElapsed"] > 120:
-			if !game_session[connected_wallet]["initiated_swap"]:
+		if session["timeElapsed"] > 120:
+			if !session["initiated_swap"]:
 					# If seed hasn't been obtained or requested during the 2 minute window,
 					# remove the option to swap
 				fade("OUT", $GameInfo/SwapWindow)
 	else:
-		if $GameInfo/SwapWindow/SwapActuator.text != "Finish Swap":
+		# DEBUG
+		if !$GameInfo/SwapWindow/SwapActuator.text in ["Finish Swap", "Copy Hand"]:
 			print_log("VRF Swap Seed received.  Now prove the swap.")
 			$GameInfo/SwapWindow/SwapActuator.text = "Finish Swap"
 			prove_swap()
@@ -584,21 +581,6 @@ func actuate_swap():
 		prove_swap()
 	elif $GameInfo/SwapWindow/SwapActuator.text == "Copy Hand":
 		copy_text($GameInfo/SwapWindow/HandText)
-
-	#[0] gameToken
-	#[1] startTimestamp
-	#[2] objectiveSeed
-	#[3] maximumSpend
-	#[4] totalPot
-	#[5] highBid
-	#[6] hasConcluded
-	
-	#[7] players
-	#[8] exited
-	#[9] scores
-	#[10] vrfSwapSeeds
-	#[11] discardedCards
-	#[12] winners
 
 
 
@@ -631,6 +613,9 @@ func receive_tx_receipt(tx_receipt):
 					card.num = player_status[connected_wallet]["hand"]["cards"][index]
 					card.alter_appearance()
 					index += 1
+				
+				# Update the UI
+				update_score_prediction()
 					
 					
 		
@@ -943,10 +928,7 @@ func start_game():
 	EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "480000", _callback)
 	#EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "380000", _callback)
 	
-	# DEBUG 
-	# NOTE
-	# Remember - the VRF callback is what actually starts the game
-	# Check for the objectiveSeed
+
 
 
 
@@ -1021,14 +1003,8 @@ func prove_swap():
 	var discard_nullifier = hand["discarded_cards"]["nullifier"]
 	
 	
-	# DEBUG
-	# Not implemented yet, but, he contract must require the user 
-	# to submit a proof  after requesting the swap, otherwise 
-	# the user could refuse the cards they are dealt.  Therefore, 
-	# it's okay to set the new hand here, before the transaction is 
-	# actually confirmed, because the old hand is no longer
-	# usable anyway.
-	
+
+	# Update the hand and hand hash with the new cards.
 	#     #     #     #     #     #     #     #     #     #
 	hand["nullifiers"][indices[0]] = new_nullifiers[0]
 	hand["nullifiers"][indices[1]] = new_nullifiers[1]
@@ -1111,9 +1087,6 @@ func prove_play_cards():
 		"gameToken": SEPOLIA_GAME_TOKEN_ADDRESS
 	}
 	
-	# DEBUG
-	# For some reason the address is coming in last,
-	# make sure this remains consistent
 	var public_types  = [
 		["uint256"],
 		["uint256"],
@@ -1347,7 +1320,7 @@ func conclusion_phase():
 	$ConcludeGame.visible = true
 	fade("IN", $ConcludeGame)
 	# DEBUG
-	# Conclusion buton
+	# Conclusion button
 
 
 ## UI HELPERS
@@ -1446,3 +1419,18 @@ func reset_game_ui():
 		card.queue_free()
 	in_game = false
 	game_session = {}
+
+func update_score_prediction():
+	var session = game_session[connected_wallet]
+	
+	var objective_attractor = session["objective"]["attractor"]
+	var objective_color = session["objective"]["color"]
+	var cards = player_status[connected_wallet]["hand"]["cards"]
+	var predicted_score = predict_score(objective_attractor, objective_color, cards) 
+			
+	session["predicted_score"] = predicted_score
+	
+	var color_text = "Blue"
+	if objective_color == 2:
+		color_text = "Silver"
+	$GameInfo/Objective.text = "Attractor: " + str(objective_attractor) + "\nColor: " + color_text + "\nPredicted Score: " + str(predicted_score)
