@@ -17,7 +17,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
     // CONSTANTS
     uint8 constant TIME_LIMIT = 240;
-    uint16 constant END_LIMIT = 900;
+    uint16 constant END_LIMIT = 600; //900
     
     // DEBUG
     uint8 constant TABLE_SIZE = 1;
@@ -55,6 +55,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         uint256[TABLE_SIZE] scores;
         uint256[TABLE_SIZE] vrfSwapSeeds;
         uint256[TABLE_SIZE] discardedCards;
+        bool[TABLE_SIZE] completedSwap;
         address[] winners;
     }
 
@@ -78,12 +79,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
 
     // CONSTRUCTOR ADDRESSES
-    // ETHEREUM SEPOLIA
-    //address vrfWrapperAddress = 0x195f15F2d49d693cE265b4fB0fdDbE15b1850Cc1;
-    //address handZKPVerifier = 0x91459cc5b40132568e4E4374AF81c9f0914FD82c;
-    //address swapZKPVerifier = 0x470E736178f6D325CbC18541C7D0E4aA8FBc3ddA;
-    //address playZKPVerifier = 0x363A4c6C96DB074c46311909AfB7d0F56c14972C;
-
+    
     // BASE SEPOLIA
     address vrfWrapperAddress = 0x7a1BaC17Ccc5b313516C5E16fb24f7659aA5ebed;
     address handZKPVerifier = 0x4F42DE06d0789dD5C280B11F8B47749403f9D26a;
@@ -397,6 +393,9 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         // Update to new hand
         player.currentHand = _pubSignals[2];
 
+        // Mark that the player has completed the swap.
+        session.completedSwap[player.playerIndex] = true;
+
         emit ProvedSwap(msg.sender, gameId, vrfSwapSeed);
     }
     
@@ -424,9 +423,14 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         // Validate the proof.
         if (!IZKPVerifier(playZKPVerifier).verifyPlayProof(_pA, _pB, _pC, _pubSignals)) revert InvalidZKP();
 
-        // Validate against hand hash
+        // Validate against hand hash.
         if (_pubSignals[0] != player.currentHand) revert InvalidHash();
         
+        // If the player swapped, make sure they proved the swap.
+        if (session.vrfSwapSeeds[playerIndex] != 0) {
+            if (!session.completedSwap[playerIndex]) revert HaveNotSwapped();
+        }
+
         // Get the score
         uint256[5] memory cards = [_pubSignals[1], _pubSignals[2], _pubSignals[3], _pubSignals[4], _pubSignals[5]];
         uint256 score = scoreHand(session.objectiveSeed, cards);
