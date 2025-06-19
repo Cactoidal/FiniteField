@@ -416,7 +416,7 @@ func join_game():
 	get_game_session(game_id)
 	get_game_player_info(game_id)
 	# DEBUG
-	$GameInfo/Bid.text = str(player_status["connected_wallet"]["total_bid_amount"]) + " / 1000"
+	$GameInfo/Bid.text = str(player_status[connected_wallet]["total_bid_amount"]) + " / 1000"
 
 
 
@@ -711,9 +711,10 @@ func receive_tx_receipt(tx_receipt):
 		
 		if tx_type == "RAISE":
 			var amount = tx_receipt["amount"]
-			player_status["connected_wallet"]["total_bid_amount"] += int(amount)
 			# DEBUG
-			$GameInfo/Bid.text = str(player_status["connected_wallet"]["total_bid_amount"]) + " / 1000"
+			var total_bid_amount = int(player_status[connected_wallet]["total_bid_amount"]) + int(amount)
+			player_status[connected_wallet]["total_bid_amount"] = str(total_bid_amount)
+			$GameInfo/Bid.text = str(player_status[connected_wallet]["total_bid_amount"]) + " / 1000"
 	
 		
 		if tx_type == "CONCLUDE_GAME":
