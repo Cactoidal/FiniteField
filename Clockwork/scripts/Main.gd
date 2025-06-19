@@ -154,6 +154,12 @@ func _process(delta):
 				get_game_session(game_id)
 			else:
 				get_game_player_info(game_id)
+		
+		if hexagon_timer > 0:
+			hexagon_timer -= delta
+			if hexagon_timer < 0:
+				hexagon_timer = 3
+				spawn_hexagons()
 
 
 func polled_accounts(callback):
@@ -307,13 +313,17 @@ func prompt_buy_seed():
 	fadein_button($Prompt/BuySeed)
 
 func wait_for_seed():
-	print_log("Waiting for VRF response...")
+	pass
+	# DEBUG - redundant
+	#print_log("Waiting for VRF response...")
 
 
 func prompt_prove_hand():
 	print_log("Generate hand to join a game")
 	fadein_button($Prompt/GetHand)
 	must_copy_hand = true
+	# Turn off hexagon animation
+	hexagon_timer = 0
 
 
 func prompt_restore_hand():
@@ -521,6 +531,9 @@ func got_game_session(callback):
 			get_game_player_info(player_status[connected_wallet]["game_id"])
 			$GameInfo.visible = true
 			fade("IN", $GameInfo)
+			
+			# Turn off the hexagon animation
+			hexagon_timer = 0
 		
 		
 
@@ -573,6 +586,8 @@ func got_game_player_info(callback):
 					# remove the option to swap
 				fade("OUT", $GameInfo/SwapWindow)
 	else:
+		# Turn off hexagon animation
+		hexagon_timer = 0
 		if player_status[connected_wallet]["hand"]["has_swapped"]:
 			if $GameInfo/SwapWindow/SwapActuator.text != "Copy Hand":
 				set_up_copy_swap()
@@ -721,8 +736,10 @@ func receive_tx_receipt(tx_receipt):
 			print_log("Concluding game...")
 			reset_states()
 		
-		if tx_type in ["START_GAME", "INITIATE_SWAP"]:
+		if tx_type in ["GET_HAND_VRF", "START_GAME", "INITIATE_SWAP"]:
 			print_log("Awaiting VRF Response...")
+			spawn_hexagons()
+			hexagon_timer = 3
 		
 		if tx_type in ["ZK_PROOF"]:
 			# After successfully proving cards at the end of the game,
@@ -1525,6 +1542,11 @@ var prompt_connect = true
 var must_copy_hand = true
 var PREGAME_STATE = ""
 var in_game = false
+var hexagon_timer = 0
+var hexagon_positions = [[0,0]]
+var hexagon_scene = preload("res://scenes/Hexagon.tscn")
+
+
 
 
 func initialize_game_state():
@@ -1575,6 +1597,11 @@ func fadein_button(_button):
 	_button.visible = true
 	fade("IN", _button)
 
+func spawn_hexagons():
+	hexagon_positions = [[0,0]]
+	var new_hexagon = hexagon_scene.instantiate()
+	$Hexagons.add_child(new_hexagon)
+
 func copy_text(source):
 	var text_to_copy = source.text
 	var js_code = "navigator.clipboard.writeText(%s);" % JSON.stringify(text_to_copy)
@@ -1596,6 +1623,7 @@ func reset_states():
 	reset_prompts()
 	remove_overlay()
 	reset_game_ui()
+	hexagon_timer = 0
 
 func reset_game_ui():
 	$GameInfo.modulate.a = 0

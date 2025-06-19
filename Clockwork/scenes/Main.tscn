@@ -660,3 +660,10 @@ offset_right = 230.0
 offset_bottom = 538.0
 mouse_default_cursor_shape = 2
 text = "Reveal Cards"
+
+[node name="Hexagons" type="Control" parent="."]
+anchors_preset = 0
+offset_left = 223.0
+offset_top = 275.0
+offset_right = 263.0
+offset_bottom = 315.0
