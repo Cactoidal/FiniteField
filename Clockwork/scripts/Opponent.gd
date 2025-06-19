@@ -6,7 +6,11 @@ var probability
 
 var final_score
 
-var totalBid
+# DEBUG
+# Initialized here because the function that updates the totalBid
+# first checks whether it is lower than the incoming value
+var totalBid = 0
+
 var folded
 
 var probability_calculated = false
@@ -58,3 +62,12 @@ func load_swapped_cards(cards):
 			1: $Background/Info/Card2.add_child(new_card)
 		i += 1;
 	
+
+func raise_animation(new_total_bid):
+	var amount = int(new_total_bid) - int(totalBid)
+	$Background/Raised.text = "Raised: +" + str(amount)
+	$Background/Raised.modulate.a = 1
+	var tween = create_tween()
+	tween.tween_property($Background/Raised, "modulate:a", 1, 1) # 1 second delay
+	tween.tween_property($Background/Raised, "modulate:a", 0, 4)
+	tween.play()

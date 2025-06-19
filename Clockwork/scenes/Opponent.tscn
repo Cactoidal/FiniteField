@@ -35,6 +35,17 @@ offset_right = 49.0
 offset_bottom = 65.0
 text = "BID:"
 
+[node name="Raised" type="Label" parent="Background"]
+modulate = Color(1, 1, 1, 0)
+layout_mode = 0
+offset_left = 116.0
+offset_top = 35.0
+offset_right = 287.0
+offset_bottom = 70.0
+theme_override_colors/font_color = Color(0, 1, 0, 1)
+theme_override_font_sizes/font_size = 25
+text = "Raised: +0"
+
 [node name="Folded" type="Label" parent="Background"]
 visible = false
 layout_mode = 1

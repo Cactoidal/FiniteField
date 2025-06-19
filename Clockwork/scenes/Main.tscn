@@ -153,11 +153,19 @@ anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
 offset_left = 18.0
-offset_top = 491.0
+offset_top = 489.0
 offset_right = 149.0
-offset_bottom = 514.0
+offset_bottom = 512.0
 grow_vertical = 0
 text = "TOP BID: 0"
+
+[node name="TotalPot" type="Label" parent="GameInfo"]
+layout_mode = 0
+offset_left = 164.0
+offset_top = 529.0
+offset_right = 268.0
+offset_bottom = 552.0
+text = "TOTAL POT: 0"
 
 [node name="Raise" type="Button" parent="GameInfo"]
 layout_mode = 0
@@ -186,12 +194,20 @@ offset_bottom = 637.0
 mouse_default_cursor_shape = 2
 text = "Fold"
 
+[node name="GameId" type="Label" parent="GameInfo"]
+layout_mode = 0
+offset_left = 16.0
+offset_top = 454.0
+offset_right = 92.0
+offset_bottom = 477.0
+text = "GAME ID: "
+
 [node name="Time" type="Label" parent="GameInfo"]
 layout_mode = 0
 offset_left = 16.0
-offset_top = 491.0
-offset_right = 158.0
-offset_bottom = 514.0
+offset_top = 490.0
+offset_right = 185.0
+offset_bottom = 513.0
 text = "TIME REMAINING: 240"
 
 [node name="Objective" type="Label" parent="GameInfo"]
@@ -541,9 +557,9 @@ anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
 offset_left = -144.5
-offset_top = 6.0
+offset_top = 64.0
 offset_right = 140.5
-offset_bottom = 55.0
+offset_bottom = 217.0
 grow_horizontal = 2
 text = "Paste the addresses of 3 opponents below.
 

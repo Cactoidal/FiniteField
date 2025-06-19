@@ -509,7 +509,9 @@ func got_game_session(callback):
 	session["highBid"] = callback["result"][5]
 	session["hasConcluded"] = callback["result"][6]
 	
+	$GameInfo/GameId.text = "GAME ID: " + str(player_status[connected_wallet]["game_id"])
 	$GameInfo/TopBid.text = "TOP BID: " + str(session["highBid"])
+	$GameInfo/TotalPot.text = "TOTAL POT: " + str(session["totalPot"])
 	
 	# Initialize timeElapsed.
 	if !"timeElapsed" in game_session:
@@ -652,6 +654,9 @@ func update_opponent_list(callback):
 		
 		# Update opponent bid
 		# DEBUG - simulated
+		if int(opponent.totalBid) < (int(totalBids[0])):
+			opponent.raise_animation(totalBids[0])
+			
 		opponent.totalBid = totalBids[0]
 		#opponent.totalBid = totalBids[index]
 		
