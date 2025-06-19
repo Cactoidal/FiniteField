@@ -9,13 +9,20 @@ var finished_sliding = false
 var main
 var index
 
+var is_opponent_card = false
+
 func _ready():
 	alter_appearance()
 	
-	$Color/Button.connect("pressed", select_card)
-	slide_target = position.x + x_slide
-
-	slide_out()
+	
+ 	# Only player cards perform the slide animation and are clickable
+	if !is_opponent_card:
+		$Color/Button.connect("pressed", select_card)
+		slide_target = position.x + x_slide
+		slide_out()
+	
+	else:
+		$Color/Button.queue_free()
 
 
 func alter_appearance():

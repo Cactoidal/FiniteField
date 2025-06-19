@@ -21,6 +21,8 @@ var player_status = {}
 var game_session = {}
 
 @onready var card_scene = preload("res://scenes/Card.tscn")
+@onready var opponent_scene = preload("res://scenes/Opponent.tscn")
+
 
 ## ZK 
 
@@ -106,6 +108,7 @@ func connect_wallet():
 
 func got_account_list(callback):
 	if callback["result"]:
+		
 		connected_wallet = callback["result"][0]
 		
 		# Instantiate the wallet if needed
@@ -408,7 +411,10 @@ func join_game():
 	in_game = true
 	splay_cards()
 	initialize_game_state()
-	get_game_session(player_status[connected_wallet]["game_id"])
+	var game_id = player_status[connected_wallet]["game_id"]
+	get_game_session(game_id)
+	get_game_player_info(game_id)
+	
 
 
 
@@ -542,16 +548,20 @@ func got_game_player_info(callback):
 	var scores = callback["result"][3]
 	var totalBids = callback["result"][4]
 	
+	update_opponent_list(callback)
+	
 	var session = game_session[connected_wallet]
+	
+	var player = player_status[connected_wallet]
 	
 	# Check the time remaining.
 	get_time_limit(session["startTimestamp"])
 	
-	var player_index = player_status[connected_wallet]["player_index"]
+	var player_index = player["player_index"]
 
 
 	var vrf_swap_seed = vrfSwapSeeds[int(player_index)]
-	player_status[connected_wallet]["hand"]["vrf_swap_seed"] = vrf_swap_seed
+	player["hand"]["vrf_swap_seed"] = vrf_swap_seed
 	
 	if vrf_swap_seed == "0":
 		if session["timeElapsed"] > 120:
@@ -566,9 +576,86 @@ func got_game_player_info(callback):
 			$GameInfo/SwapWindow/SwapActuator.text = "Finish Swap"
 			prove_swap()
 
-	
 
+
+func update_opponent_list(callback):
+	var players = callback["result"][0]
+	var exited = callback["result"][1]
+	var vrfSwapSeeds = callback["result"][2]
+	var scores = callback["result"][3]
+	var totalBids = callback["result"][4]
 	
+	# Initialize the opponent list
+	var session = game_session[connected_wallet]
+	if session["players"].is_empty():
+		session["players"] = players
+		initialize_opponent_list(players)
+	
+	for opponent in $Opponents.get_children():
+		var index = opponent.index
+		
+		# Check if opponent hand probability has been calculated:
+		if session["predicted_score"] != 0:
+			if !opponent.probability_calculated:
+				calculate_opponent_hand_score(opponent.address)
+		
+		# Check if opponent has exited the game
+		# DEBUG - simulated
+		if exited[0] != "0x0000000000000000000000000000000000000000":
+		#if exited[index] != "0x0000000000000000000000000000000000000000":
+			if str(scores[index]) != "0":
+				opponent.final_score = str(scores[index])
+			else:
+				opponent.folded = true
+		
+		# Check if opponent swapped
+		# DEBUG - simulated
+		if vrfSwapSeeds[0] != "0":
+		#if vrfSwapSeeds[index] != "0":
+			if !opponent.swapped:
+				var swapped_cards = generate_hand(vrfSwapSeeds[index], generate_nullifier_set(2))
+				opponent.load_swapped_cards(swapped_cards["cards"])
+		
+		# Update opponent bid
+		# DEBUG - simulated
+		opponent.totalBid = totalBids[0]
+		#opponent.totalBid = totalBids[index]
+		
+		# Update the opponent UI
+		opponent.update()
+
+
+
+func initialize_opponent_list(players):
+	var y_shift = 0
+	var index = 0
+		
+	# DEBUG 
+	# Opponent simulation
+	for player in [connected_wallet, connected_wallet, connected_wallet]:
+	#for player in players:
+			
+		# DEBUG
+		# For now, just simulate the opponent
+		#if player != connected_wallet:
+		#DEBUG ! ! 
+		if player == connected_wallet:
+			
+			var new_opponent = opponent_scene.instantiate()
+			new_opponent.index = index
+			
+			new_opponent.address = player
+				
+			$Opponents.add_child(new_opponent)
+			new_opponent.position.y += y_shift
+			# DEBUG
+			# The opponent scene is 187 pixels on y axis
+			y_shift += 191
+			
+		index += 1
+
+
+
 func actuate_swap():
 	
 	if $GameInfo/SwapWindow/SwapActuator.text == "Initiate Swap":
@@ -597,10 +684,25 @@ func receive_tx_receipt(tx_receipt):
 		var blockNumber = str(tx_receipt["blockNumber"])
 		print_log("Tx included in block " + blockNumber)
 		
+		if tx_type == "FOLD":
+			# Exit the game after folding
+			print_log("Folded, exiting game...")
+			reset_states()
+		
+		if tx_type == "CONCLUDE_GAME":
+			print_log("Concluding game...")
+			reset_states()
+		
 		if tx_type in ["START_GAME", "INITIATE_SWAP"]:
 			print_log("Awaiting VRF Response...")
 		
 		if tx_type in ["ZK_PROOF"]:
+			# After successfully proving cards at the end of the game,
+			# exit the game session
+			if game_session[connected_wallet]["proving_cards"]:
+				game_session[connected_wallet]["proving_cards"] = false
+				print_log("Proved cards, exiting game...")
+				reset_states()
 			
 			# After successfully proving the swap, update the cards
 			# and prompt the player to copy the new hand data.
@@ -1104,6 +1206,8 @@ func prove_play_cards():
 	
 	print_log("Generating ZKP to prove cards...")
 	
+	game_session[connected_wallet]["proving_cards"] = true
+	
 	calculateProof(
 		inputs, 
 		public_types, 
@@ -1150,11 +1254,55 @@ func withdraw_eth():
 
 ## HELPER FUNCTIONS
 
-func calculate_hands():
+func calculate_opponent_hand_score(opponent_address):
+	var callback = EthersWeb.create_callback(self, "get_opponent_probability", {"opponent_address": opponent_address})
+
+	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "tokenPlayerStatus", [opponent_address, SEPOLIA_GAME_TOKEN_ADDRESS]) 
+	
+	EthersWeb.read_from_contract(
+		test_network,
+		SEPOLIA_GAME_LOGIC_ADDRESS, 
+		data,
+		callback
+		)
+	
+	
+
+func get_opponent_probability(callback):
+	if has_error(callback):
+		return
+	
+	var vrf_seed = callback["result"][0]
+	
+	var session = game_session[connected_wallet]
+	var objective_attractor = session["objective"]["attractor"]
+	var objective_color = session["objective"]["color"] 
 	var nullifiers = generate_nullifier_set(hand_size)
+	
+	var count = 0.0
+	
+	var player_predicted_score = session["predicted_score"]
+	
 	for local_seed in local_seeds:
-		generate_hand(player_status[connected_wallet]["vrf_seed"], nullifiers, local_seed)
-		
+		var cards = generate_hand(vrf_seed, nullifiers, local_seed)["cards"]
+		var score = predict_score(objective_attractor, objective_color, cards)
+		if score > player_predicted_score:
+			count += 1.0
+	
+	var probability = count / 20.0
+	
+	var opponent_address = callback["opponent_address"]
+	
+	for opponent in $Opponents.get_children():
+		if opponent.address == opponent_address:
+			opponent.probability_calculated = true
+			opponent.probability = probability * 100
+			opponent.update()
+	
+	
+
+
+
 
 # Predict hands using the set of local seeds
 func generate_hand(_vrf_seed, nullifiers, fixed_seed=null):
@@ -1341,11 +1489,15 @@ var in_game = false
 
 func initialize_game_state():
 	game_session[connected_wallet] = {
+		"players": [],
+		"timeElapsed": 0,
+		"predicted_score": 0,
 		"game_started": false,
 		"got_game_objective": false,
 		"selected_card_indices": [],
 		"initiated_swap": false,
 		"entered_prove_phase": false,
+		"proving_cards": false,
 		"entered_conclusion_phase": false
 	}
 
@@ -1420,11 +1572,15 @@ func reset_game_ui():
 	$ConcludeGame.visible = false
 	$GameInfo/Objective.text = ""
 
-	
 	for card in $Cards.get_children():
 		card.queue_free()
+	
+	for opponent in $Opponents.get_children():
+		opponent.queue_free()
+		
 	in_game = false
-	game_session = {}
+	game_session[connected_wallet] = {}
+
 
 func update_score_prediction():
 	var session = game_session[connected_wallet]

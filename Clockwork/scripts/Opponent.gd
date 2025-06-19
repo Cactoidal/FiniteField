@@ -1,0 +1,60 @@
+extends Control
+
+var address
+var index
+var probability
+
+var final_score
+
+var totalBid
+var folded
+
+var probability_calculated = false
+var swapped = false
+var swapped_cards 
+
+var card_scene = preload("res://scenes/Card.tscn")
+
+func _ready():
+	modulate.a = 0
+	var tween = create_tween()
+	tween.tween_property(self, "modulate:a", 1, 1)
+	tween.play()
+
+
+func update():
+	$Background/Address.text = address
+	$Background/Bid.text = "BID: " + str(totalBid)
+	
+	if probability:
+		$Background/Info/Probability.visible = true
+		$Background/Info/Probability.text = str(probability) + "% Chance of Higher Initial Score"
+	
+	if folded:
+		$Background/Info.visible = false
+		$Background/Folded.visible = true
+	
+	if final_score:
+		$Background/FinalScore.text = "Final Score:\n" + str(final_score)
+		$Background/FinalScore.visible = true
+		$Background/Info.visible = false
+
+
+
+func load_swapped_cards(cards):
+	if swapped:
+		return
+	swapped = true
+	
+	swapped_cards = cards
+	
+	var i = 0
+	for card in cards:
+		var new_card = card_scene.instantiate()
+		new_card.is_opponent_card = true
+		new_card.num = card
+		match i:
+			0: $Background/Info/Card1.add_child(new_card)
+			1: $Background/Info/Card2.add_child(new_card)
+		i += 1;
+	
