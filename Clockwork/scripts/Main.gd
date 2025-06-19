@@ -352,8 +352,31 @@ func prompt_join_game():
 
 func get_hand():
 	if must_copy_hand:
-		var hand = generate_hand(player_status[connected_wallet]["vrf_seed"], generate_nullifier_set(hand_size), get_random_local_seed())
+		
+		# DEBUG
+		# Generate hand based on HandPreference.  If something other than
+		# "random" is selected, calculate possible hands and find the hand
+		# with the highest score given the set of preferences
+		var vrf_seed = player_status[connected_wallet]["vrf_seed"]
+		var nullifiers = generate_nullifier_set(hand_size)
+		var hand_preference = $Prompt/GetHand/HandPreference
+		var hand = generate_hand(vrf_seed, nullifiers, get_random_local_seed())
+	
+		if !hand_preference.random:
+			var obj_attractor = hand_preference.obj_attractor
+			var obj_color = hand_preference.obj_color
+			var score = predict_score(obj_attractor, obj_color, hand["cards"])
+			
+			for local_seed in local_seeds:
+				var _hand = generate_hand(vrf_seed, nullifiers, local_seed)
+				var _score = predict_score(obj_attractor, obj_color, _hand["cards"])
+				if _score > score:
+					score = _score
+					hand = _hand
+
 		player_status[connected_wallet]["hand"] = hand
+		
+		
 		$Overlay/Warning/HandText.text = Marshalls.utf8_to_base64( str(hand) )
 		$Overlay/Warning.visible = true
 		$Overlay.visible = true
@@ -561,11 +584,11 @@ func got_game_player_info(callback):
 	if has_error(callback):
 		return
 	
-	var players = callback["result"][0]
-	var exited = callback["result"][1]
+	#var players = callback["result"][0]
+	#var exited = callback["result"][1]
 	var vrfSwapSeeds = callback["result"][2]
-	var scores = callback["result"][3]
-	var totalBids = callback["result"][4]
+	#var scores = callback["result"][3]
+	#var totalBids = callback["result"][4]
 	
 	update_opponent_list(callback)
 	
@@ -1004,6 +1027,10 @@ const maximum_spend = "1000"
 func buy_seed():
 	if !connected_wallet:
 		print_log("Please connect your wallet")
+		return
+	
+	if player_status[connected_wallet]["token_balance"] == "0":
+		print_log("Need to buy tokens first")
 		return
 	
 	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "buyHandSeed", [connected_wallet, SEPOLIA_GAME_TOKEN_ADDRESS, ante])
@@ -1563,7 +1590,7 @@ var hexagon_positions = [[0,0]]
 var hexagon_scene = preload("res://scenes/Hexagon.tscn")
 var start_slider_x = 1153
 var out_slider_x = 895
-var out = false
+var slide_out = false
 
 
 
@@ -1623,13 +1650,12 @@ func spawn_hexagons():
 
 
 func slide_concluder():
-	var pos_x = $Info/GameConcluder.position.x 
 	var target_x = out_slider_x
-	if out:
-		out = false
+	if slide_out:
+		slide_out = false
 		target_x = start_slider_x
 	else:
-		out = true
+		slide_out = true
 	var tween = create_tween()
 	tween.tween_property($Info/GameConcluder, "position:x", target_x, 0.5)
 	tween.play()
@@ -1657,6 +1683,7 @@ func reset_states():
 	reset_game_ui()
 	hexagon_timer = 0
 	$Info/GameConcluder.position.x = start_slider_x
+	slide_out = false
 
 func reset_game_ui():
 	$GameInfo.modulate.a = 0
