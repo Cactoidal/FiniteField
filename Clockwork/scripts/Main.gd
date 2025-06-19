@@ -342,7 +342,7 @@ func get_hand():
 	if must_copy_hand:
 		var hand = generate_hand(player_status[connected_wallet]["vrf_seed"], generate_nullifier_set(hand_size), get_random_local_seed())
 		player_status[connected_wallet]["hand"] = hand
-		$Overlay/Warning/HandText.text = str(hand)
+		$Overlay/Warning/HandText.text = Marshalls.utf8_to_base64( str(hand) )
 		$Overlay/Warning.visible = true
 		$Overlay.visible = true
 	else:
@@ -358,15 +358,16 @@ func copy_hand():
 
 
 func restore_hand():
-	var hand_text = $Overlay/Restore/RestoreText.text
-
+	var hand_base64 = $Overlay/Restore/RestoreText.text
+	var hand_text = Marshalls.base64_to_utf8(hand_base64)
+	
 	var hand_json = JSON.parse_string(hand_text)
 	if !hand_json:
 		print_log("Invalid JSON")
 		return
 	
 	for key in hand_json.keys():
-		if !key in ["vrf_seed", "fixed_seed", "cards", "nullifiers", "card_hashes", "hand_hash", "vrf_swap_seed", "discarded_cards"]:
+		if !key in ["vrf_seed", "fixed_seed", "cards", "nullifiers", "card_hashes", "hand_hash", "vrf_swap_seed", "discarded_cards", "has_swapped"]:
 			print_log("Invalid JSON")
 			return
 			
@@ -414,7 +415,8 @@ func join_game():
 	var game_id = player_status[connected_wallet]["game_id"]
 	get_game_session(game_id)
 	get_game_player_info(game_id)
-	
+	# DEBUG
+	$GameInfo/Bid.text = str(player_status["connected_wallet"]["total_bid_amount"]) + " / 1000"
 
 
 
@@ -571,12 +573,19 @@ func got_game_player_info(callback):
 					# remove the option to swap
 				fade("OUT", $GameInfo/SwapWindow)
 	else:
+		if player_status[connected_wallet]["hand"]["has_swapped"]:
+			if $GameInfo/SwapWindow/SwapActuator.text != "Copy Hand":
+				set_up_copy_swap()
 		# DEBUG
-		if !$GameInfo/SwapWindow/SwapActuator.text in ["Finish Swap", "Copy Hand"]:
+		elif !$GameInfo/SwapWindow/SwapActuator.text in ["Finish Swap", "Copy Hand"]:
 			print_log("VRF Swap Seed received.  Now prove the swap.")
 			$GameInfo/SwapWindow/SwapActuator.text = "Finish Swap"
 			prove_swap()
 
+
+func set_up_copy_swap():
+	$GameInfo/SwapWindow/SwapActuator.text = "Copy Hand"
+	$GameInfo/SwapWindow/HandText.text = Marshalls.utf8_to_base64( str(player_status[connected_wallet]["hand"]) )
 
 
 func update_opponent_list(callback):
@@ -647,9 +656,10 @@ func initialize_opponent_list(players):
 			
 		# DEBUG
 		# For now, just simulate the opponent
-		#if player != connected_wallet:
+		
 		#DEBUG ! ! 
 		if player == connected_wallet:
+		#if player != connected_wallet:
 			
 			var new_opponent = opponent_scene.instantiate()
 			new_opponent.index = index
@@ -699,6 +709,13 @@ func receive_tx_receipt(tx_receipt):
 			print_log("Folded, exiting game...")
 			reset_states()
 		
+		if tx_type == "RAISE":
+			var amount = tx_receipt["amount"]
+			player_status["connected_wallet"]["total_bid_amount"] += int(amount)
+			# DEBUG
+			$GameInfo/Bid.text = str(player_status["connected_wallet"]["total_bid_amount"]) + " / 1000"
+	
+		
 		if tx_type == "CONCLUDE_GAME":
 			print_log("Concluding game...")
 			reset_states()
@@ -718,8 +735,10 @@ func receive_tx_receipt(tx_receipt):
 			# and prompt the player to copy the new hand data.
 			if game_session[connected_wallet]["initiated_swap"]:
 				game_session[connected_wallet]["initiated_swap"] = false
-				$GameInfo/SwapWindow/SwapActuator.text = "Copy Hand"
-				$GameInfo/SwapWindow/HandText.text = str(player_status[connected_wallet]["hand"])
+				
+				player_status[connected_wallet]["hand"]["has_swapped"] = true
+				set_up_copy_swap()
+				
 				var index = 0
 				for card in $Cards.get_children():
 					card.num = player_status[connected_wallet]["hand"]["cards"][index]
@@ -1055,7 +1074,7 @@ func raise():
 	
 	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "raise", [SEPOLIA_GAME_TOKEN_ADDRESS, amount])
 	
-	var _callback = EthersWeb.create_callback(self, "await_transaction", {"tx_type": "RAISE"})
+	var _callback = EthersWeb.create_callback(self, "await_transaction", {"tx_type": "RAISE", "amount": amount})
 	EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0", null, _callback)
 
 
@@ -1364,7 +1383,8 @@ func generate_hand(_vrf_seed, nullifiers, fixed_seed=null):
 		"nullifiers": nullifiers,
 		"card_hashes": card_hashes,
 		"hand_hash": hand_hash,
-		"vrf_swap_seed": "0"
+		"vrf_swap_seed": "0",
+		"has_swapped": false
 	}
 	
 	return hand

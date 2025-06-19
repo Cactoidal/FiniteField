@@ -545,9 +545,7 @@ offset_top = 6.0
 offset_right = 140.5
 offset_bottom = 55.0
 grow_horizontal = 2
-text = "To play solo DEMO mode with no opponents, leave the following entries blank.
-
-Otherwise, paste the addresses of up to 3 opponents.
+text = "Paste the addresses of 3 opponents below.
 
 To be eligible to play, all opponents must have created and proven a hand on-chain."
 horizontal_alignment = 1
