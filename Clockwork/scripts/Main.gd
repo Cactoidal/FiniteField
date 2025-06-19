@@ -555,7 +555,8 @@ func got_game_player_info(callback):
 	var player = player_status[connected_wallet]
 	
 	# Check the time remaining.
-	get_time_limit(session["startTimestamp"])
+	if session["game_started"]:
+		get_time_limit(session["startTimestamp"])
 	
 	var player_index = player["player_index"]
 
@@ -603,8 +604,15 @@ func update_opponent_list(callback):
 		# DEBUG - simulated
 		if exited[0] != "0x0000000000000000000000000000000000000000":
 		#if exited[index] != "0x0000000000000000000000000000000000000000":
-			if str(scores[index]) != "0":
-				opponent.final_score = str(scores[index])
+			
+			# DEBUG - simulated
+			if str(scores[0]) != "0":
+			#if str(scores[index]) != "0":
+				
+				# DEBUG - simulated
+				opponent.final_score = str(scores[0])
+				#opponent.final_score = str(scores[index])
+			
 			else:
 				opponent.folded = true
 		
@@ -613,7 +621,9 @@ func update_opponent_list(callback):
 		if vrfSwapSeeds[0] != "0":
 		#if vrfSwapSeeds[index] != "0":
 			if !opponent.swapped:
-				var swapped_cards = generate_hand(vrfSwapSeeds[index], generate_nullifier_set(2))
+				# DEBUG - simulated
+				var swapped_cards = generate_hand(vrfSwapSeeds[0], generate_nullifier_set(2))
+				#var swapped_cards = generate_hand(vrfSwapSeeds[index], generate_nullifier_set(2))
 				opponent.load_swapped_cards(swapped_cards["cards"])
 		
 		# Update opponent bid
@@ -1374,7 +1384,16 @@ func generate_nullifier_set(count):
 
 func get_random_local_seed():
 	var bytes = "0x" + Crypto.new().generate_random_bytes(32).hex_encode()
-	var index = window.zkBridge.bigNumberModulus(bytes, 20)
+	
+	
+	# DEBUG
+	# BIG NOTE
+	# The inSet template in the handDraw circuit is broken;
+	# the for loop should be checking i < length + 1, but currently
+	# just checks length, which means that max rolls will erroneously 
+	# turn up invalid.  Fix this later
+	var index = window.zkBridge.bigNumberModulus(bytes, 19)
+	#var index = window.zkBridge.bigNumberModulus(bytes, 20)
 	var local_seed = local_seeds[int(index)]
 	return local_seed
 
