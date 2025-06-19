@@ -82,6 +82,8 @@ func connect_buttons():
 	$ConnectWallet.connect("pressed", connect_wallet)
 	$Info/BuyTokens.connect("pressed", mint_and_deposit)
 	$Info/WithdrawETH.connect("pressed", withdraw_eth)
+	$Info/GameConcluder/ConcludeGame.connect("pressed", conclude_game_from_pregame)
+	$Info/GameConcluder/SlideButton.connect("pressed", slide_concluder)
 	
 	$Prompt/BuySeed.connect("pressed", buy_seed)
 	$Prompt/GetHand.connect("pressed", get_hand)
@@ -1278,6 +1280,15 @@ func conclude_game():
 	EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0", null, _callback)
 
 
+# DEBUG
+# Concluding from the pregame menu
+func conclude_game_from_pregame():
+	var game_id = $Info/GameConcluder/Input.text
+	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "concludeGame", [game_id])
+	
+	var _callback = EthersWeb.create_callback(self, "await_transaction", {"tx_type": "CONCLUDE_GAME"})
+	EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0", null, _callback)
+
 
 
 
@@ -1550,6 +1561,9 @@ var in_game = false
 var hexagon_timer = 0
 var hexagon_positions = [[0,0]]
 var hexagon_scene = preload("res://scenes/Hexagon.tscn")
+var start_slider_x = 1153
+var out_slider_x = 895
+var out = false
 
 
 
@@ -1607,6 +1621,19 @@ func spawn_hexagons():
 	var new_hexagon = hexagon_scene.instantiate()
 	$Hexagons.add_child(new_hexagon)
 
+
+func slide_concluder():
+	var pos_x = $Info/GameConcluder.position.x 
+	var target_x = out_slider_x
+	if out:
+		out = false
+		target_x = start_slider_x
+	else:
+		out = true
+	var tween = create_tween()
+	tween.tween_property($Info/GameConcluder, "position:x", target_x, 0.5)
+	tween.play()
+
 func copy_text(source):
 	var text_to_copy = source.text
 	var js_code = "navigator.clipboard.writeText(%s);" % JSON.stringify(text_to_copy)
@@ -1629,6 +1656,7 @@ func reset_states():
 	remove_overlay()
 	reset_game_ui()
 	hexagon_timer = 0
+	$Info/GameConcluder.position.x = start_slider_x
 
 func reset_game_ui():
 	$GameInfo.modulate.a = 0
