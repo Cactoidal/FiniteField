@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT
-// An example of a consumer contract that directly pays for each request.
 pragma solidity 0.8.20;
 
 import {ConfirmedOwner} from "@chainlink/contracts@1.4.0/src/v0.8/shared/access/ConfirmedOwner.sol";
