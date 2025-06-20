@@ -80,7 +80,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     // BASE SEPOLIA
     address vrfWrapperAddress = 0x7a1BaC17Ccc5b313516C5E16fb24f7659aA5ebed;
     address handZKPVerifier = 0x4F42DE06d0789dD5C280B11F8B47749403f9D26a;
-    address swapZKPVerifier = 0xb813785fFACaCE237D2498366366dC4371cD8ae4;
+    address swapZKPVerifier = 0x03406057c8EB0531A7cd9edFEbFe12269329cc49;
     address playZKPVerifier = 0x0DCE3ECE63594bae4AB4eDfBc4a11B609fCBCeAf;
 
     constructor() 
