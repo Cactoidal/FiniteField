@@ -716,6 +716,16 @@ var GAME_LOGIC_ABI = [
 				"internalType": "uint256[1]",
 				"name": "",
 				"type": "uint256[1]"
+			},
+			{
+				"internalType": "uint256",
+				"name": "totalPot",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "highBid",
+				"type": "uint256"
 			}
 		],
 		"stateMutability": "view",

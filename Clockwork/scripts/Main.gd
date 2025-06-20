@@ -7,7 +7,7 @@ extends Control
 var test_network = "Base Sepolia"
 
 # BASE SEPOLIA
-const SEPOLIA_GAME_LOGIC_ADDRESS = "0x0eB6AA69FF74ff95089d48BAa14cfD75038eF140"
+const SEPOLIA_GAME_LOGIC_ADDRESS = "0xd8e684d4D5CDef1c83c4D595402E36f76b99E7Bc"
 const SEPOLIA_GAME_TOKEN_ADDRESS = "0x0C8776B3427bBab1F4A4c599c153781598758495"
 
 
@@ -589,6 +589,12 @@ func got_game_player_info(callback):
 	var vrfSwapSeeds = callback["result"][2]
 	#var scores = callback["result"][3]
 	#var totalBids = callback["result"][4]
+	
+	var totalPot = callback["result"][5]
+	var highBid = callback["result"][6]
+	
+	$GameInfo/TopBid.text = "TOP BID: " + str(highBid)
+	$GameInfo/TotalPot.text = "TOTAL POT: " + str(totalPot)
 	
 	update_opponent_list(callback)
 	
