@@ -38,8 +38,11 @@ func propagate():
 	new_hexagon.propagation = propagation - 1
 	
 	var random_point = [0,0]
-	while random_point in main.hexagon_positions:
+	var attempt = 0
+	while random_point in main.hexagon_positions && attempt < 6:
 		random_point = position + (hex_directions[randi() % 6] * hex_size)
+		attempt += 1
+		
 	main.hexagon_positions.push_back(random_point)
 
 	new_hexagon.position = random_point

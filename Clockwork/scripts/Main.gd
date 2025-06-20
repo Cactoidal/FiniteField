@@ -7,7 +7,13 @@ extends Control
 var test_network = "Base Sepolia"
 
 # BASE SEPOLIA
+
+# 1-player demo / test contract
 const SEPOLIA_GAME_LOGIC_ADDRESS = "0xd8e684d4D5CDef1c83c4D595402E36f76b99E7Bc"
+
+# 4-player contract
+#const SEPOLIA_GAME_LOGIC_ADDRESS = "0x7BB9Ce6519514800EEcA8d0278fe1bD2818e9bFe"
+
 const SEPOLIA_GAME_TOKEN_ADDRESS = "0x0C8776B3427bBab1F4A4c599c153781598758495"
 
 
@@ -76,6 +82,7 @@ func _ready():
 	
 	# DEBUG
 	#print(window.walletBridge.getFunctionSelector("InvalidHash()"))
+	#0x0af806e04e0432c15d6f685dd23af9d86bc609b3ef4f895cbf5ce87240722094
 
 
 func connect_buttons():
@@ -115,7 +122,7 @@ func got_account_list(callback):
 		
 		# Instantiate the wallet if needed
 		if !connected_wallet in player_status.keys():
-			player_status[connected_wallet] = {"hand": {}}
+			player_status[connected_wallet] = {"hand": {"selected_card_indices": []}}
 		
 		prompt_connect = false
 		fade("OUT", $ConnectWallet, move_connect_button)
@@ -177,7 +184,7 @@ func polled_accounts(callback):
 			
 			# Instantiate new accounts
 			if !wallet in player_status.keys():
-				player_status[wallet] = {"hand":{}}
+				player_status[wallet] = {"hand":{"selected_card_indices":[]}}
 			
 			# Account switch detected, reset UI
 			reset_states()
@@ -402,7 +409,7 @@ func restore_hand():
 		return
 	
 	for key in hand_json.keys():
-		if !key in ["vrf_seed", "fixed_seed", "cards", "nullifiers", "card_hashes", "hand_hash", "vrf_swap_seed", "discarded_cards", "has_swapped"]:
+		if !key in ["vrf_seed", "fixed_seed", "cards", "nullifiers", "card_hashes", "hand_hash", "vrf_swap_seed", "discarded_cards", "has_swapped", "selected_card_indices"]:
 			print_log("Invalid JSON")
 			return
 			
@@ -484,7 +491,7 @@ func update_card_indices(_index):
 		print_log("Already selected cards for swap")
 		return
 	
-	var selected_card_indices = game_session[connected_wallet]["selected_card_indices"]
+	var selected_card_indices = player_status[connected_wallet]["hand"]["selected_card_indices"]
 		
 	if _index in selected_card_indices:
 		print_log("Already selected that card")
@@ -585,7 +592,18 @@ func got_game_player_info(callback):
 		return
 	
 	#var players = callback["result"][0]
-	#var exited = callback["result"][1]
+	var exited = callback["result"][1]
+	
+	# DEBUG
+	# Should be a catch-all for any condition that
+	# removes the player from the game, just double
+	# check that redundancy with other functions
+	# won't cause problems
+	if connected_wallet in exited:
+		print_log("Game has concluded, exiting...")
+		reset_states()
+	
+	
 	var vrfSwapSeeds = callback["result"][2]
 	#var scores = callback["result"][3]
 	#var totalBids = callback["result"][4]
@@ -634,7 +652,8 @@ func got_game_player_info(callback):
 func set_up_copy_swap():
 	$GameInfo/SwapWindow/SwapActuator.text = "Copy Hand"
 	$GameInfo/SwapWindow/HandText.text = Marshalls.utf8_to_base64( str(player_status[connected_wallet]["hand"]) )
-
+	$GameInfo/CopyPrompt.visible = true
+	fade("IN", $GameInfo/CopyPrompt)
 
 func update_opponent_list(callback):
 	var players = callback["result"][0]
@@ -729,13 +748,16 @@ func initialize_opponent_list(players):
 
 func actuate_swap():
 	
+
+	
 	if $GameInfo/SwapWindow/SwapActuator.text == "Initiate Swap":
-		if game_session[connected_wallet]["selected_card_indices"].size() == 2:
+		if player_status[connected_wallet]["hand"]["selected_card_indices"].size() == 2:
 			print_log("Initiating swap...")
 			swap_cards()
 		else:
 			print_log("Select 2 cards")
-	elif $GameInfo/SwapWindow/SwapActuator.text == "Prove Swap":
+	elif $GameInfo/SwapWindow/SwapActuator.text == "Finish Swap":
+		
 		prove_swap()
 	elif $GameInfo/SwapWindow/SwapActuator.text == "Copy Hand":
 		copy_text($GameInfo/SwapWindow/HandText)
@@ -958,7 +980,7 @@ func await_transaction(callback):
 				
 				"CONCLUDE_GAME":
 					remove = false
-					print_log("Game time limit has not elapsed")
+					print_log("Game time limit has not elapsed, or game already concluded")
 			
 	if remove:
 		remove_overlay()
@@ -1145,7 +1167,7 @@ func fold():
 
 func swap_cards():
 
-	var indices = game_session[connected_wallet]["selected_card_indices"]
+	var indices = player_status[connected_wallet]["hand"]["selected_card_indices"]
 	indices.sort()
 	
 	var nullifier = generate_nullifier_set(1)[0]
@@ -1192,19 +1214,26 @@ func prove_swap():
 
 	var vrf_swap_seed = hand["vrf_swap_seed"]
 	var old_cards = hand["card_hashes"]
-	var indices = game_session[connected_wallet]["selected_card_indices"]
+	var indices = player_status[connected_wallet]["hand"]["selected_card_indices"]
 	var new_nullifiers = generate_nullifier_set(2)
 	var discard_nullifier = hand["discarded_cards"]["nullifier"]
-	
-	
 
 	# Update the hand and hand hash with the new cards.
+	
+	# DEBUG
+	# STARMARK
+	# Okay, in theory the problem (or at least, one of the problems)
+	# is that the hand hash is being changed every time the prove
+	# button is pressed.  it would be better to have a "floating hand" - 
+	# perhaps stored in the session mapping? - that does not actually
+	# change the stored hand until after tx confirmation
+	
 	#     #     #     #     #     #     #     #     #     #
 	hand["nullifiers"][indices[0]] = new_nullifiers[0]
 	hand["nullifiers"][indices[1]] = new_nullifiers[1]
 	
 	var drawn_cards = generate_hand(vrf_swap_seed, new_nullifiers)
-	
+
 	hand["cards"][indices[0]] = drawn_cards["cards"][0]
 	hand["cards"][indices[1]] = drawn_cards["cards"][1]
 
@@ -1216,6 +1245,7 @@ func prove_swap():
 	hand["hand_hash"] = poseidon(card_hashes)
 	
 	#     #     #     #     #     #     #     #     #     #
+	
 	
 	var inputs = {
 		
@@ -1241,6 +1271,11 @@ func prove_swap():
 	]
 	
 	print_log("Generating ZKP to prove swap...")
+	
+	# DEBUG
+	# A redundant toggle of "initiated_swap", necessary in instances
+	# where the player quits the session before proving
+	game_session[connected_wallet]["initiated_swap"] = true
 	
 	calculateProof(
 		inputs, 
@@ -1451,7 +1486,8 @@ func generate_hand(_vrf_seed, nullifiers, fixed_seed=null):
 		"card_hashes": card_hashes,
 		"hand_hash": hand_hash,
 		"vrf_swap_seed": "0",
-		"has_swapped": false
+		"has_swapped": false,
+		"selected_card_indices": []
 	}
 	
 	return hand
@@ -1608,7 +1644,6 @@ func initialize_game_state():
 		"predicted_score": 0,
 		"game_started": false,
 		"got_game_objective": false,
-		"selected_card_indices": [],
 		"initiated_swap": false,
 		"entered_prove_phase": false,
 		"proving_cards": false,
@@ -1705,6 +1740,8 @@ func reset_game_ui():
 	$RevealCards.visible = false
 	$ConcludeGame.visible = false
 	$GameInfo/Objective.text = ""
+	$GameInfo/CopyPrompt.visible = false
+	$GameInfo/CopyPrompt.modulate.a = 0
 
 	for card in $Cards.get_children():
 		card.queue_free()

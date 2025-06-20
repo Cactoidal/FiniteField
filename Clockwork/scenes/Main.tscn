@@ -270,6 +270,33 @@ text = "Attractor:
 Color:
 Predicted Score: "
 
+[node name="CopyPrompt" type="ColorRect" parent="GameInfo"]
+visible = false
+modulate = Color(1, 1, 1, 0)
+layout_mode = 1
+offset_left = 45.0
+offset_top = 157.0
+offset_right = 144.0
+offset_bottom = 241.0
+color = Color(0, 0, 0, 1)
+
+[node name="Prompt" type="Label" parent="GameInfo/CopyPrompt"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -49.5
+offset_top = -37.0
+offset_right = 49.5
+offset_bottom = 40.0
+grow_horizontal = 2
+grow_vertical = 2
+text = "Copy the new hand data!"
+horizontal_alignment = 1
+autowrap_mode = 3
+
 [node name="SwapWindow" type="ColorRect" parent="GameInfo"]
 layout_mode = 0
 offset_left = 16.0
@@ -484,7 +511,6 @@ mouse_default_cursor_shape = 2
 text = "Rejoin Game"
 
 [node name="Curtain" type="ColorRect" parent="."]
-visible = false
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -725,9 +751,9 @@ anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -171.5
-offset_top = 59.0
+offset_top = 32.0
 offset_right = 171.5
-offset_bottom = 90.0
+offset_bottom = 63.0
 grow_horizontal = 2
 grow_vertical = 2
 
@@ -739,9 +765,9 @@ anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -171.5
-offset_top = 96.0
+offset_top = 69.0
 offset_right = 171.5
-offset_bottom = 127.0
+offset_bottom = 100.0
 grow_horizontal = 2
 grow_vertical = 2
 
@@ -753,9 +779,9 @@ anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -171.5
-offset_top = 133.0
+offset_top = 106.0
 offset_right = 171.5
-offset_bottom = 164.0
+offset_bottom = 137.0
 grow_horizontal = 2
 grow_vertical = 2
 
