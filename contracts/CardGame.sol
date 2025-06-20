@@ -19,9 +19,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     uint8 constant TIME_LIMIT = 240;
     uint16 constant END_LIMIT = 600; //900
     
-    // DEBUG
-    uint8 constant TABLE_SIZE = 1;
-    //uint8 constant TABLE_SIZE = 4;
+    uint8 constant TABLE_SIZE = 4;
 
     // The Scalar Field size used by Circom.
     // Because VRF seeds can sometimes exceed this value, it must be applied as a modulus to the on-chain
@@ -338,9 +336,6 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         // A Poseidon hash of the discarded card indices is committed,
         // to be later validated against the ZKP's public output.
 
-        // DEBUG 
-        // NOTE
-        // Make sure the hash order is consistent
         session.discardedCards[playerIndex] = discardedCardsHash;
 
         // Call VRF.
@@ -403,10 +398,6 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
     // Only callable after the first 4 minutes, before 15 minutes have elapsed
     function provePlayCards(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[7] calldata _pubSignals) public {
-        
-        // DEBUG
-        // Double check _pubSignals
-        // The order of signals may not be consistent with the circuit
 
         // Check that the player is eligible to reveal their cards
         address gameToken = address(uint160(_pubSignals[6]));
