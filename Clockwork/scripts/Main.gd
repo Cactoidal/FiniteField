@@ -9,10 +9,11 @@ var test_network = "Base Sepolia"
 # BASE SEPOLIA
 
 # 1-player demo / test contract
-#const SEPOLIA_GAME_LOGIC_ADDRESS = "0xd8e684d4D5CDef1c83c4D595402E36f76b99E7Bc"
+#const SEPOLIA_GAME_LOGIC_ADDRESS = "0xF7D1de248761143110318Cc1dE1dbb9ae23e851e"
 
 # 4-player contract
-const SEPOLIA_GAME_LOGIC_ADDRESS = "0x7BB9Ce6519514800EEcA8d0278fe1bD2818e9bFe"
+const SEPOLIA_GAME_LOGIC_ADDRESS = "0x6cada66d2CCC373699eD936331a716274b61e439"
+
 
 const SEPOLIA_GAME_TOKEN_ADDRESS = "0x0C8776B3427bBab1F4A4c599c153781598758495"
 
@@ -1107,8 +1108,14 @@ func get_hand_zk_proof():
 ## GAME FUNCTIONS
 
 func start_game():
-	var address_list = [connected_wallet, $Overlay/StartGame/Address1.text, $Overlay/StartGame/Address2.text, $Overlay/StartGame/Address3.text]
+	#DEBUG
+	# This idea doesn't work because for some reason the browser/Godot only allows
+	# a single paste; thereafter it will not "notice" any updates to the clipboard
+	#var address_list = [connected_wallet, $Overlay/StartGame/Address1.text, $Overlay/StartGame/Address2.text, $Overlay/StartGame/Address3.text]
 	
+	# DEBUG 
+	# hardcoded addresses for testing
+	var address_list = [connected_wallet, "0xa25DD5CAD249D94B25A88912599091C15Bd99126", "0x6B4FE3Be5C115eBd7229ef95338CCc365343ab1E", "0xCCCb8D1e464420e9ec085156eE64824b2648De7F"]
 	
 	var params = [
 		SEPOLIA_GAME_TOKEN_ADDRESS,

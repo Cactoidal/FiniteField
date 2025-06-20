@@ -1,7 +1,7 @@
 extends Control
 
 @onready var window = EthersWeb.window
-@onready var GAME_LOGIC_ABI = GameAbi.GAME_LOGIC_ABI
+@onready var GAME_LOGIC_ABI = GameAbi.SINGLE_PLAYER_GAME_LOGIC_ABI
 @onready var GAME_TOKEN_ABI = GameAbi.GAME_TOKEN_ABI
 
 var test_network = "Base Sepolia"
@@ -9,10 +9,10 @@ var test_network = "Base Sepolia"
 # BASE SEPOLIA
 
 # 1-player demo / test contract
-const SEPOLIA_GAME_LOGIC_ADDRESS = "0xd8e684d4D5CDef1c83c4D595402E36f76b99E7Bc"
+const SEPOLIA_GAME_LOGIC_ADDRESS = "0xF7D1de248761143110318Cc1dE1dbb9ae23e851e"
 
 # 4-player contract
-#const SEPOLIA_GAME_LOGIC_ADDRESS = "0x7BB9Ce6519514800EEcA8d0278fe1bD2818e9bFe"
+#const SEPOLIA_GAME_LOGIC_ADDRESS = "0x6cada66d2CCC373699eD936331a716274b61e439"
 
 const SEPOLIA_GAME_TOKEN_ADDRESS = "0x0C8776B3427bBab1F4A4c599c153781598758495"
 
@@ -1219,14 +1219,6 @@ func prove_swap():
 	var discard_nullifier = hand["discarded_cards"]["nullifier"]
 
 	# Update the hand and hand hash with the new cards.
-	
-	# DEBUG
-	# STARMARK
-	# Okay, in theory the problem (or at least, one of the problems)
-	# is that the hand hash is being changed every time the prove
-	# button is pressed.  it would be better to have a "floating hand" - 
-	# perhaps stored in the session mapping? - that does not actually
-	# change the stored hand until after tx confirmation
 	
 	#     #     #     #     #     #     #     #     #     #
 	hand["nullifiers"][indices[0]] = new_nullifiers[0]
