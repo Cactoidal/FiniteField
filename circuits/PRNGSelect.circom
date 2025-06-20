@@ -20,7 +20,7 @@ template PRNGSelect(handSize, deckSize, deck) {
         seedHashes[i].inputs[0] <== seed;
         seed = seedHashes[i].out;
 
-        modulii[i] = SignalModulus(deckSize, 20);
+        modulii[i] = SignalModulus(deckSize, decksize);
         modulii[i].in <== seed;
         var index;
         index = modulii[i].out;
