@@ -666,7 +666,9 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         address[TABLE_SIZE] memory, 
         uint256[TABLE_SIZE] memory,
         uint256[TABLE_SIZE] memory,
-        uint256[TABLE_SIZE] memory) 
+        uint256[TABLE_SIZE] memory, 
+        uint256 totalPot,
+        uint256 highBid) 
         {
         game storage session = gameSessions[gameId];
 
@@ -685,7 +687,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
             totalBids[i] = tokenPlayerStatus[players[i]][gameToken].totalBidAmount;
         }
 
-        return (players, exited, vrfSwapSeeds, scores, totalBids);
+        return (players, exited, vrfSwapSeeds, scores, totalBids, session.totalPot, session.highBid);
     }
 
 
