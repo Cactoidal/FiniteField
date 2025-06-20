@@ -9,10 +9,10 @@ var test_network = "Base Sepolia"
 # BASE SEPOLIA
 
 # 1-player demo / test contract
-#const SEPOLIA_GAME_LOGIC_ADDRESS = "0xd8e684d4D5CDef1c83c4D595402E36f76b99E7Bc"
+const SEPOLIA_GAME_LOGIC_ADDRESS = "0xd8e684d4D5CDef1c83c4D595402E36f76b99E7Bc"
 
 # 4-player contract
-const SEPOLIA_GAME_LOGIC_ADDRESS = "0x7BB9Ce6519514800EEcA8d0278fe1bD2818e9bFe"
+#const SEPOLIA_GAME_LOGIC_ADDRESS = "0x7BB9Ce6519514800EEcA8d0278fe1bD2818e9bFe"
 
 const SEPOLIA_GAME_TOKEN_ADDRESS = "0x0C8776B3427bBab1F4A4c599c153781598758495"
 
@@ -433,7 +433,6 @@ func restore_hand():
 
 
 # DEBUG
-# STARMARK
 func delete_hand():
 	if $Overlay/Restore/DeleteHand.text == "Conclude Game":
 		conclude_game()
@@ -678,26 +677,38 @@ func update_opponent_list(callback):
 				calculate_opponent_hand_score(opponent.address)
 		
 		# Check if opponent has exited the game
-		if exited[index] != "0x0000000000000000000000000000000000000000":
+		# DEBUG - simulated
+		if exited[0] != "0x0000000000000000000000000000000000000000":
+		#if exited[index] != "0x0000000000000000000000000000000000000000":
 			
-			if str(scores[index]) != "0":
+			# DEBUG - simulated
+			if str(scores[0]) != "0":
+			#if str(scores[index]) != "0":
 				
-				opponent.final_score = str(scores[index])
+				# DEBUG - simulated
+				opponent.final_score = str(scores[0])
+				#opponent.final_score = str(scores[index])
 			
 			else:
 				opponent.folded = true
 		
 		# Check if opponent swapped
-		if vrfSwapSeeds[index] != "0":
+		# DEBUG - simulated
+		if vrfSwapSeeds[0] != "0":
+		#if vrfSwapSeeds[index] != "0":
 			if !opponent.swapped:
-				var swapped_cards = generate_hand(vrfSwapSeeds[index], generate_nullifier_set(2))
+				# DEBUG - simulated
+				var swapped_cards = generate_hand(vrfSwapSeeds[0], generate_nullifier_set(2))
+				#var swapped_cards = generate_hand(vrfSwapSeeds[index], generate_nullifier_set(2))
 				opponent.load_swapped_cards(swapped_cards["cards"])
 		
 		# Update opponent bid
-		if int(opponent.totalBid) < (int(totalBids[index])):
-			opponent.raise_animation(totalBids[index])
+		# DEBUG - simulated
+		if int(opponent.totalBid) < (int(totalBids[0])):
+			opponent.raise_animation(totalBids[0])
 			
-		opponent.totalBid = totalBids[index]
+		opponent.totalBid = totalBids[0]
+		#opponent.totalBid = totalBids[index]
 		
 		# Update the opponent UI
 		opponent.update()
@@ -708,12 +719,17 @@ func initialize_opponent_list(players):
 	var y_shift = 0
 	var index = 0
 		
-	for player in players:
-		
+	# DEBUG 
+	# Opponent simulation
+	for player in [connected_wallet, connected_wallet, connected_wallet]:
+	#for player in players:
+			
 		# DEBUG
-		# Capitalization of addresses is not always consistent,
-		# so letters are set to lowercase before comparing
-		if player.to_lower() != connected_wallet.to_lower():
+		# For now, just simulate the opponent
+		
+		#DEBUG ! ! 
+		if player == connected_wallet:
+		#if player != connected_wallet:
 			
 			var new_opponent = opponent_scene.instantiate()
 			new_opponent.index = index
@@ -1051,9 +1067,8 @@ func buy_seed():
 	# Gas limit must be specified because ethers.js will underestimate
 	
 	# DEBUG
-	# the necessary GAS LIMIT varies by network and number of players
-	EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "620000", _callback)
-	#EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "360000", _callback)
+	# the necessary GAS LIMIT varies by network
+	EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "360000", _callback)
 	#EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "260000", _callback)
 
 
@@ -1107,23 +1122,21 @@ func get_hand_zk_proof():
 ## GAME FUNCTIONS
 
 func start_game():
-	var address_list = [connected_wallet, $Overlay/StartGame/Address1.text, $Overlay/StartGame/Address2.text, $Overlay/StartGame/Address3.text]
-	
-	
 	var params = [
 		SEPOLIA_GAME_TOKEN_ADDRESS,
 		ante,
 		maximum_spend,
-		address_list
+		# DEBUG
+		# This array must contain [TABLE_SIZE] players, i.e. 4 players
+		# Right now just solo
+		[connected_wallet]
 	]
 	var data = EthersWeb.get_calldata(GAME_LOGIC_ABI, "startGame", params)
-
 	var _callback = EthersWeb.create_callback(self, "await_transaction", {"tx_type": "START_GAME"})
 	
 	# DEBUG
-	# the necessary GAS LIMIT varies by network and number of players
-	EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "620000", _callback)
-	#EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "480000", _callback)
+	# the necessary GAS LIMIT varies by network
+	EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "480000", _callback)
 	#EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "380000", _callback)
 	
 
@@ -1174,12 +1187,25 @@ func swap_cards():
 	var _callback = EthersWeb.create_callback(self, "await_transaction", {"tx_type": "INITIATE_SWAP"})
 	
 	# DEBUG
-	# the necessary GAS LIMIT varies by network and number of players
-	EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "620000", _callback)
-	#EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "360000", _callback)
+	# the necessary GAS LIMIT varies by network
+	EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "360000", _callback)
 	#EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "260000", _callback)
 
-
+#To prove the swap, we need these inputs:
+	# + The new VRF Swap Seed (vrfSeed)
+	# + A new local seed (fixedSeed) - ideally optimized for the best score
+	# + SEPOLIA_GAME_TOKEN_ADDRESS (gameToken)
+	# + The 5 hashes of the old cards (oldCards)
+	# + The 2 indices to be swapped (indices)
+	# + The 2 nullifiers of the new cards (nullifiers)
+	# + The nullifier of the discarded cards (discardNullifier)
+	
+	#The types of the public outputs are:
+	# + uint256 (discardedCardHash)
+	# + uint256 (oldHandHash)
+	# + uint256 (newHandHash)
+	# + uint256 (vrfSeed)
+	# + address (gameToken)
 func prove_swap():
 	
 	# This is the direct reference, NOT a copy,
@@ -1193,6 +1219,14 @@ func prove_swap():
 	var discard_nullifier = hand["discarded_cards"]["nullifier"]
 
 	# Update the hand and hand hash with the new cards.
+	
+	# DEBUG
+	# STARMARK
+	# Okay, in theory the problem (or at least, one of the problems)
+	# is that the hand hash is being changed every time the prove
+	# button is pressed.  it would be better to have a "floating hand" - 
+	# perhaps stored in the session mapping? - that does not actually
+	# change the stored hand until after tx confirmation
 	
 	#     #     #     #     #     #     #     #     #     #
 	hand["nullifiers"][indices[0]] = new_nullifiers[0]
@@ -1475,7 +1509,6 @@ func get_random_local_seed():
 	var bytes = "0x" + Crypto.new().generate_random_bytes(32).hex_encode()
 	
 	var index = window.zkBridge.bigNumberModulus(bytes, 20)
-	
 	var local_seed = local_seeds[int(index)]
 	return local_seed
 
@@ -1573,7 +1606,8 @@ func conclusion_phase():
 	$RevealCards.visible = false
 	$ConcludeGame.visible = true
 	fade("IN", $ConcludeGame)
-
+	# DEBUG
+	# Conclusion button
 
 
 ## UI HELPERS
