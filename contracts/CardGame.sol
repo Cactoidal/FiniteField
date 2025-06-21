@@ -16,7 +16,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
     // CONSTANTS
     uint8 constant TIME_LIMIT = 240;
-    uint16 constant END_LIMIT = 600; //900
+    uint16 constant END_LIMIT = 600;
     
     uint8 constant TABLE_SIZE = 4;
 
