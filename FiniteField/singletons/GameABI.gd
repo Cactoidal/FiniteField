@@ -270,44 +270,6 @@ var GAME_LOGIC_ABI = [
 		"anonymous": false,
 		"inputs": [
 			{
-				"indexed": true,
-				"internalType": "address",
-				"name": "from",
-				"type": "address"
-			},
-			{
-				"indexed": true,
-				"internalType": "address",
-				"name": "to",
-				"type": "address"
-			}
-		],
-		"name": "OwnershipTransferRequested",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": true,
-				"internalType": "address",
-				"name": "from",
-				"type": "address"
-			},
-			{
-				"indexed": true,
-				"internalType": "address",
-				"name": "to",
-				"type": "address"
-			}
-		],
-		"name": "OwnershipTransferred",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
 				"indexed": false,
 				"internalType": "address",
 				"name": "player",
@@ -519,13 +481,6 @@ var GAME_LOGIC_ABI = [
 		"type": "event"
 	},
 	{
-		"inputs": [],
-		"name": "acceptOwnership",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
 		"inputs": [
 			{
 				"internalType": "address",
@@ -719,6 +674,11 @@ var GAME_LOGIC_ABI = [
 				"type": "uint256[4]"
 			},
 			{
+				"internalType": "bool[4]",
+				"name": "",
+				"type": "bool[4]"
+			},
+			{
 				"internalType": "uint256",
 				"name": "totalPot",
 				"type": "uint256"
@@ -803,19 +763,6 @@ var GAME_LOGIC_ABI = [
 				"internalType": "uint256",
 				"name": "",
 				"type": "uint256"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "owner",
-		"outputs": [
-			{
-				"internalType": "address",
-				"name": "",
-				"type": "address"
 			}
 		],
 		"stateMutability": "view",
@@ -1139,19 +1086,6 @@ var GAME_LOGIC_ABI = [
 			}
 		],
 		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "to",
-				"type": "address"
-			}
-		],
-		"name": "transferOwnership",
-		"outputs": [],
-		"stateMutability": "nonpayable",
 		"type": "function"
 	},
 	{

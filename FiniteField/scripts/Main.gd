@@ -7,7 +7,7 @@ extends Control
 var test_network = "Base Sepolia"
 
 # 4-player contract
-const SEPOLIA_GAME_LOGIC_ADDRESS = "0x6cada66d2CCC373699eD936331a716274b61e439"
+const SEPOLIA_GAME_LOGIC_ADDRESS = "0xF78214E99B50EA19812628a372886F22cBcc97d3"
 const SEPOLIA_GAME_TOKEN_ADDRESS = "0x0C8776B3427bBab1F4A4c599c153781598758495"
 
 
@@ -402,7 +402,7 @@ func restore_hand():
 		return
 	
 	for key in hand_json.keys():
-		if !key in ["vrf_seed", "fixed_seed", "cards", "nullifiers", "card_hashes", "hand_hash", "vrf_swap_seed", "discarded_cards", "initiated_swap", "has_swapped", "selected_card_indices"]:
+		if !key in ["vrf_seed", "fixed_seed", "cards", "nullifiers", "card_hashes", "hand_hash", "vrf_swap_seed", "discarded_cards", "initiated_swap", "swap_nullifiers", "selected_card_indices"]:
 			print_log("Invalid JSON")
 			return
 			
@@ -586,7 +586,7 @@ func got_game_player_info(callback):
 	if has_error(callback):
 		return
 	
-	#var players = callback["result"][0]
+	var players = callback["result"][0]
 	var exited = callback["result"][1]
 	
 	# DEBUG
@@ -598,31 +598,25 @@ func got_game_player_info(callback):
 		print_log("Game has concluded, exiting...")
 		reset_states()
 	
-	
-	var vrfSwapSeeds = callback["result"][2]
-	#var scores = callback["result"][3]
-	#var totalBids = callback["result"][4]
-	
-	var totalPot = callback["result"][5]
-	var highBid = callback["result"][6]
-	
-	$GameInfo/TopBid.text = "TOP BID: " + str(highBid)
-	$GameInfo/TotalPot.text = "TOTAL POT: " + str(totalPot)
-	
 	update_opponent_list(callback)
 	
 	var session = game_session[connected_wallet]
-	
 	var player = player_status[connected_wallet]
+	var player_index = int(player["player_index"])
+	
+	var vrfSwapSeeds = callback["result"][2]
+	var playerHasSwapped = callback["result"][5][player_index]
+	var totalPot = callback["result"][6]
+	var highBid = callback["result"][7]
+	
+	$GameInfo/TopBid.text = "TOP BID: " + str(highBid)
+	$GameInfo/TotalPot.text = "TOTAL POT: " + str(totalPot)
 	
 	# Check the time remaining.
 	if session["game_started"]:
 		get_time_limit(session["startTimestamp"])
 	
-	var player_index = player["player_index"]
-
-
-	var vrf_swap_seed = vrfSwapSeeds[int(player_index)]
+	var vrf_swap_seed = vrfSwapSeeds[player_index]
 	player["hand"]["vrf_swap_seed"] = vrf_swap_seed
 	
 	if vrf_swap_seed == "0":
@@ -634,7 +628,7 @@ func got_game_player_info(callback):
 	else:
 		# Turn off hexagon animation
 		hexagon_timer = 0
-		if player["hand"]["has_swapped"]:
+		if playerHasSwapped:
 			if $GameInfo/SwapWindow/SwapActuator.text != "Copy Hand":
 				set_up_copy_swap()
 		# DEBUG
@@ -646,7 +640,9 @@ func got_game_player_info(callback):
 
 func set_up_copy_swap():
 	$GameInfo/SwapWindow/SwapActuator.text = "Copy Hand"
-	$GameInfo/SwapWindow/HandText.text = Marshalls.utf8_to_base64( str(player_status[connected_wallet]["hand"]) )
+	# DEBUG
+	var hand_copy = player_status[connected_wallet]["hand"].duplicate()
+	$GameInfo/SwapWindow/HandText.text = Marshalls.utf8_to_base64( str(hand_copy) )
 	$GameInfo/CopyPrompt.visible = true
 	fade("IN", $GameInfo/CopyPrompt)
 
@@ -726,8 +722,6 @@ func initialize_opponent_list(players):
 
 func actuate_swap():
 	
-
-	
 	if $GameInfo/SwapWindow/SwapActuator.text == "Initiate Swap":
 		if player_status[connected_wallet]["hand"]["selected_card_indices"].size() == 2:
 			print_log("Initiating swap...")
@@ -735,8 +729,8 @@ func actuate_swap():
 		else:
 			print_log("Select 2 cards")
 	elif $GameInfo/SwapWindow/SwapActuator.text == "Finish Swap":
-		
 		prove_swap()
+		
 	elif $GameInfo/SwapWindow/SwapActuator.text == "Copy Hand":
 		copy_text($GameInfo/SwapWindow/HandText)
 
@@ -790,12 +784,13 @@ func receive_tx_receipt(tx_receipt):
 			if player_status[connected_wallet]["hand"]["initiated_swap"]:
 				player_status[connected_wallet]["hand"]["initiated_swap"] = false
 				
-				player_status[connected_wallet]["hand"]["has_swapped"] = true
 				set_up_copy_swap()
 				
+				# DEBUG
+				var card_copy = player_status[connected_wallet]["hand"]["cards"].duplicate()
 				var index = 0
 				for card in $Cards.get_children():
-					card.num = player_status[connected_wallet]["hand"]["cards"][index]
+					card.num = card_copy[index]
 					card.alter_appearance()
 					index += 1
 				
@@ -1188,16 +1183,21 @@ func prove_swap():
 	var vrf_swap_seed = hand["vrf_swap_seed"]
 	var old_cards = hand["card_hashes"]
 	var indices = hand["selected_card_indices"]
-	var new_nullifiers = generate_nullifier_set(2)
+	
+	if hand["swap_nullifiers"].is_empty():
+		hand["swap_nullifiers"] = generate_nullifier_set(2)
+	
+	var swap_nullifiers = hand["swap_nullifiers"]
+	
 	var discard_nullifier = hand["discarded_cards"]["nullifier"]
 
 	# Update the hand and hand hash with the new cards.
 	
 	#     #     #     #     #     #     #     #     #     #
-	hand["nullifiers"][indices[0]] = new_nullifiers[0]
-	hand["nullifiers"][indices[1]] = new_nullifiers[1]
+	hand["nullifiers"][indices[0]] = swap_nullifiers[0]
+	hand["nullifiers"][indices[1]] = swap_nullifiers[1]
 	
-	var drawn_cards = generate_hand(vrf_swap_seed, new_nullifiers)
+	var drawn_cards = generate_hand(vrf_swap_seed, swap_nullifiers)
 
 	hand["cards"][indices[0]] = drawn_cards["cards"][0]
 	hand["cards"][indices[1]] = drawn_cards["cards"][1]
@@ -1222,7 +1222,7 @@ func prove_swap():
 		
 		"indices": indices,
 		
-		"nullifiers": new_nullifiers,
+		"nullifiers": swap_nullifiers,
 		
 		"discardNullifier": discard_nullifier
 	}
@@ -1451,7 +1451,7 @@ func generate_hand(_vrf_seed, nullifiers, fixed_seed=null):
 		"card_hashes": card_hashes,
 		"hand_hash": hand_hash,
 		"vrf_swap_seed": "0",
-		"has_swapped": false,
+		"swap_nullifiers": [],
 		"initiated_swap": false,
 		"selected_card_indices": []
 	}
