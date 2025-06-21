@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.20;
 
-import {ConfirmedOwner} from "@chainlink/contracts@1.4.0/src/v0.8/shared/access/ConfirmedOwner.sol";
-import {LinkTokenInterface} from "@chainlink/contracts@1.4.0/src/v0.8/shared/interfaces/LinkTokenInterface.sol";
 import {VRFV2PlusWrapperConsumerBase} from "@chainlink/contracts@1.4.0/src/v0.8/vrf/dev/VRFV2PlusWrapperConsumerBase.sol";
 import {VRFV2PlusClient} from "@chainlink/contracts@1.4.0/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
@@ -12,7 +10,7 @@ import {IVRFWrapper} from "./interfaces/IVRFWrapper.sol";
 import {IWithdraw} from "./interfaces/IWithdraw.sol";
 import {IZKPVerifier} from "./interfaces/IZKPVerifier.sol";
 
-contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGuard {
+contract CardGame is VRFV2PlusWrapperConsumerBase, ReentrancyGuard {
 
     // CONSTANTS
     uint8 constant TIME_LIMIT = 240;
@@ -83,7 +81,6 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     address playZKPVerifier = 0x0DCE3ECE63594bae4AB4eDfBc4a11B609fCBCeAf;
 
     constructor() 
-        ConfirmedOwner(msg.sender)
         VRFV2PlusWrapperConsumerBase(vrfWrapperAddress)
     {}
 
@@ -618,8 +615,6 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
     }
 
-    
-    
     function getObjective(uint256 vrfSeed) public pure returns(uint256, uint256) {
         uint attractor = (vrfSeed % 10) + 1;
         uint color = (vrfSeed % 2) + 1;
@@ -662,6 +657,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         uint256[TABLE_SIZE] memory,
         uint256[TABLE_SIZE] memory,
         uint256[TABLE_SIZE] memory, 
+        bool[TABLE_SIZE] memory,
         uint256 totalPot,
         uint256 highBid) 
         {
@@ -673,6 +669,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         uint256[TABLE_SIZE] memory vrfSwapSeeds;
         uint256[TABLE_SIZE] memory scores;
         uint256[TABLE_SIZE] memory totalBids;
+        bool[TABLE_SIZE] memory hasSwapped;
 
         for (uint i = 0; i < TABLE_SIZE; i++) {
             players[i] = session.players[i];
@@ -680,9 +677,10 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
             vrfSwapSeeds[i] = session.vrfSwapSeeds[i];
             scores[i] = session.scores[i];
             totalBids[i] = tokenPlayerStatus[players[i]][gameToken].totalBidAmount;
+            hasSwapped[i] = session.completedSwap[i];
         }
 
-        return (players, exited, vrfSwapSeeds, scores, totalBids, session.totalPot, session.highBid);
+        return (players, exited, vrfSwapSeeds, scores, totalBids, hasSwapped, session.totalPot, session.highBid);
     }
 
 
@@ -768,7 +766,6 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     error CannotWithdrawDuringGame();
 
     // EVENTS
-
     event ProvedHand(address player, uint256 handHash, uint256 playerVRFSeed);
     event StartingNewGame(uint256 gameId);
     event GameStarted(uint256 gameId, uint256 objectiveVRFSeed);
