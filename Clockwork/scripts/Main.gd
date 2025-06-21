@@ -6,15 +6,8 @@ extends Control
 
 var test_network = "Base Sepolia"
 
-# BASE SEPOLIA
-
-# 1-player demo / test contract
-#const SEPOLIA_GAME_LOGIC_ADDRESS = "0xF7D1de248761143110318Cc1dE1dbb9ae23e851e"
-
 # 4-player contract
 const SEPOLIA_GAME_LOGIC_ADDRESS = "0x6cada66d2CCC373699eD936331a716274b61e439"
-
-
 const SEPOLIA_GAME_TOKEN_ADDRESS = "0x0C8776B3427bBab1F4A4c599c153781598758495"
 
 
@@ -85,7 +78,6 @@ func _ready():
 	#print(window.walletBridge.getFunctionSelector("InvalidHash()"))
 	#0x0af806e04e0432c15d6f685dd23af9d86bc609b3ef4f895cbf5ce87240722094
 
-
 func connect_buttons():
 	$ConnectWallet.connect("pressed", connect_wallet)
 	$Info/BuyTokens.connect("pressed", mint_and_deposit)
@@ -100,7 +92,7 @@ func connect_buttons():
 	$Overlay/Warning/CopyHand.connect("pressed", copy_hand)
 	$Overlay/Restore/RestoreHand.connect("pressed", restore_hand)
 	$Overlay/Restore/DeleteHand.connect("pressed", delete_hand)
-	$Overlay/StartGame/StartGame.connect("pressed", start_game)
+	$Overlay/StartGame/StartGame.connect("pressed", start_game.bind($Overlay/StartGame/Addresses))
 	
 	$GameInfo/Raise.connect("pressed", raise)
 	$GameInfo/Fold.connect("pressed", fold)
@@ -410,7 +402,7 @@ func restore_hand():
 		return
 	
 	for key in hand_json.keys():
-		if !key in ["vrf_seed", "fixed_seed", "cards", "nullifiers", "card_hashes", "hand_hash", "vrf_swap_seed", "discarded_cards", "has_swapped", "selected_card_indices"]:
+		if !key in ["vrf_seed", "fixed_seed", "cards", "nullifiers", "card_hashes", "hand_hash", "vrf_swap_seed", "discarded_cards", "initiated_swap", "has_swapped", "selected_card_indices"]:
 			print_log("Invalid JSON")
 			return
 			
@@ -439,7 +431,7 @@ func delete_hand():
 	if $Overlay/Restore/DeleteHand.text == "Conclude Game":
 		conclude_game()
 	elif $Overlay/Restore/DeleteHand.text == "Join Game":
-		start_game()
+		start_game($Overlay/Restore/Addresses)
 
 
 # DEBUG
@@ -487,13 +479,14 @@ func splay_cards():
 
 func update_card_indices(_index):
 
-	var vrf_swap_seed = player_status[connected_wallet]["hand"]["vrf_swap_seed"]
+	var hand = player_status[connected_wallet]["hand"]
+	var vrf_swap_seed = hand["vrf_swap_seed"]
 	
-	if game_session[connected_wallet]["initiated_swap"] || vrf_swap_seed!= "0":
+	if hand["initiated_swap"] || vrf_swap_seed!= "0":
 		print_log("Already selected cards for swap")
 		return
 	
-	var selected_card_indices = player_status[connected_wallet]["hand"]["selected_card_indices"]
+	var selected_card_indices = hand["selected_card_indices"]
 		
 	if _index in selected_card_indices:
 		print_log("Already selected that card")
@@ -634,14 +627,14 @@ func got_game_player_info(callback):
 	
 	if vrf_swap_seed == "0":
 		if session["timeElapsed"] > 120:
-			if !session["initiated_swap"]:
+			if !player["hand"]["initiated_swap"]:
 					# If seed hasn't been obtained or requested during the 2 minute window,
 					# remove the option to swap
 				fade("OUT", $GameInfo/SwapWindow)
 	else:
 		# Turn off hexagon animation
 		hexagon_timer = 0
-		if player_status[connected_wallet]["hand"]["has_swapped"]:
+		if player["hand"]["has_swapped"]:
 			if $GameInfo/SwapWindow/SwapActuator.text != "Copy Hand":
 				set_up_copy_swap()
 		# DEBUG
@@ -794,8 +787,8 @@ func receive_tx_receipt(tx_receipt):
 			
 			# After successfully proving the swap, update the cards
 			# and prompt the player to copy the new hand data.
-			if game_session[connected_wallet]["initiated_swap"]:
-				game_session[connected_wallet]["initiated_swap"] = false
+			if player_status[connected_wallet]["hand"]["initiated_swap"]:
+				player_status[connected_wallet]["hand"]["initiated_swap"] = false
 				
 				player_status[connected_wallet]["hand"]["has_swapped"] = true
 				set_up_copy_swap()
@@ -939,7 +932,7 @@ func await_transaction(callback):
 			"START_GAME":
 				pass
 			"INITIATE_SWAP":
-				game_session[connected_wallet]["initiated_swap"] = true
+				player_status[connected_wallet]["hand"]["initiated_swap"] = true
 				$GameInfo/SwapWindow/SwapActuator.text = "Awaiting VRF"
 				print_log("Waiting for swap seed...")
 		
@@ -1107,15 +1100,16 @@ func get_hand_zk_proof():
 
 ## GAME FUNCTIONS
 
-func start_game():
-	#DEBUG
-	# This idea doesn't work because for some reason the browser/Godot only allows
-	# a single paste; thereafter it will not "notice" any updates to the clipboard
-	#var address_list = [connected_wallet, $Overlay/StartGame/Address1.text, $Overlay/StartGame/Address2.text, $Overlay/StartGame/Address3.text]
+
+func start_game(source):
 	
-	# DEBUG 
-	# hardcoded addresses for testing
-	var address_list = [connected_wallet, "0xa25DD5CAD249D94B25A88912599091C15Bd99126", "0x6B4FE3Be5C115eBd7229ef95338CCc365343ab1E", "0xCCCb8D1e464420e9ec085156eE64824b2648De7F"]
+	var address_list = evaluate_address_list(source)
+	if !address_list:
+		return
+
+	address_list.push_front(connected_wallet)
+	
+	#var address_list = [connected_wallet, "0xa25DD5CAD249D94B25A88912599091C15Bd99126", "0x6B4FE3Be5C115eBd7229ef95338CCc365343ab1E", "0xCCCb8D1e464420e9ec085156eE64824b2648De7F"]
 	
 	var params = [
 		SEPOLIA_GAME_TOKEN_ADDRESS,
@@ -1195,7 +1189,7 @@ func prove_swap():
 
 	var vrf_swap_seed = hand["vrf_swap_seed"]
 	var old_cards = hand["card_hashes"]
-	var indices = player_status[connected_wallet]["hand"]["selected_card_indices"]
+	var indices = hand["selected_card_indices"]
 	var new_nullifiers = generate_nullifier_set(2)
 	var discard_nullifier = hand["discarded_cards"]["nullifier"]
 
@@ -1248,7 +1242,7 @@ func prove_swap():
 	# DEBUG
 	# A redundant toggle of "initiated_swap", necessary in instances
 	# where the player quits the session before proving
-	game_session[connected_wallet]["initiated_swap"] = true
+	player_status[connected_wallet]["initiated_swap"] = true
 	
 	calculateProof(
 		inputs, 
@@ -1460,6 +1454,7 @@ func generate_hand(_vrf_seed, nullifiers, fixed_seed=null):
 		"hand_hash": hand_hash,
 		"vrf_swap_seed": "0",
 		"has_swapped": false,
+		"initiated_swap": false,
 		"selected_card_indices": []
 	}
 	
@@ -1582,6 +1577,22 @@ func conclusion_phase():
 	fade("IN", $ConcludeGame)
 
 
+func evaluate_address_list(source):
+	var address_list = JSON.parse_string(source.text)
+	if !address_list:
+		print_log("Invalid array")
+		return null
+	if address_list.size() < 3:
+		print_log("Need 3 opponents")
+		return null
+	for address in address_list:
+		if typeof(address) != 4:
+			print_log("Address must be a string")
+			return null
+		
+	return address_list
+
+
 
 ## UI HELPERS
 
@@ -1609,7 +1620,6 @@ func initialize_game_state():
 		"predicted_score": 0,
 		"game_started": false,
 		"got_game_objective": false,
-		"initiated_swap": false,
 		"entered_prove_phase": false,
 		"proving_cards": false,
 		"entered_conclusion_phase": false
