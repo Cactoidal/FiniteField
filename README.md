@@ -1,2 +1,7 @@
 # Clockwork
-Chainlink Chromion Hackathon 2025
+
+Chainlink VRF seeds are requested here:
+
+Used in these circuits:
+
+Usage verified here:
