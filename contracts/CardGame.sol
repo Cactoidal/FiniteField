@@ -16,7 +16,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
     // CONSTANTS
     uint8 constant TIME_LIMIT = 240;
-    uint16 constant END_LIMIT = 600;
+    uint16 constant END_LIMIT = 600; 
     
     uint8 constant TABLE_SIZE = 4;
 
@@ -66,11 +66,10 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         bool hasRequestedSeed;
     }
 
-    mapping (uint256 => vrfRequest) public pendingVRFRequest;
 
     // Player address > GameToken contract > playerStatus
     mapping (address => mapping(address => playerStatus)) public tokenPlayerStatus;
-
+    mapping (uint256 => vrfRequest) public pendingVRFRequest;
     mapping (uint256 => game) public gameSessions;
     uint256 public latestGameId = 1;
 
@@ -88,6 +87,8 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         VRFV2PlusWrapperConsumerBase(vrfWrapperAddress)
     {}
 
+    // Players must commit to a specific token and a specific ante when buying
+    // a Chainlink VRF seed.
     function buyHandSeed(address playerAddress, address gameToken, uint256 ante) payable public nonReentrant {
         if (playerAddress == address(0)) revert ZeroAddress();
         if (ante == 0) revert ZeroAmount();
@@ -149,7 +150,8 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     }
 
 
-
+    // The VRF callback has three execution paths: 
+    // NEW_HAND, SWAP_CARDS, and GAME_OBJECTIVE
     function fulfillRandomWords(
         uint256 _requestId,
         uint256[] memory _randomWords
@@ -203,6 +205,8 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     }
 
 
+    // Commit a hash linked to a secret hand, proving it was drawn from the approved deck,
+    // using a Chainlink VRF seed combined with a secret seed from a fixed set
     function proveHand(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[3] calldata _pubSignals) public nonReentrant {
         address gameToken = address(uint160(_pubSignals[2]));
         playerStatus storage player = tokenPlayerStatus[msg.sender][gameToken];
@@ -225,6 +229,9 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     }
 
 
+    // Initiate another Chainlink VRF call to determine the objective of the game
+    // (the scoring criteria, i.e. the target card number and suit).  The VRF
+    // callback will start the game.
     function startGame(address _gameToken, uint256 _ante, uint256 _maximumSpend, address[TABLE_SIZE] calldata players) payable public nonReentrant {
         address gameToken = _gameToken;
         uint256 ante = _ante;
@@ -274,6 +281,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     }
 
 
+    // Players can raise up to the game's maximumSpend. 
     // Only callable during the first 4 minutes of a game
     function raise(address gameToken, uint amount) public nonReentrant {
         // Check if player is eligible to raise
@@ -302,6 +310,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         emit Raised(msg.sender, gameId, amount);
     }
 
+    // Exit a game early by folding.
     // Only callable during the first 4 minutes of a game
     function fold(address gameToken) public {
         // Check if the player is eligible to fold.
@@ -316,7 +325,9 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         emit Folded(msg.sender, gameId);
     }
 
-   
+    // Swap 2 cards by committing the hash of the discarded card indices.  
+    // This will initiate another Chainlink VRF call, which will be used 
+    // to draw 2 new cards.
     // Only callable during the first 2 minutes of the game
     function swapCards(address gameToken, uint256 discardedCardsHash) public payable {
         // Check if the player is eligible to swap cards.
@@ -332,9 +343,9 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         if (session.discardedCards[playerIndex] != 0) revert AlreadySwapped();
 
         if (discardedCardsHash == 0) revert InvalidDiscard();
+
         // A Poseidon hash of the discarded card indices is committed,
         // to be later validated against the ZKP's public output.
-
         session.discardedCards[playerIndex] = discardedCardsHash;
 
         // Call VRF.
@@ -354,7 +365,9 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
     }
 
-
+    // Update your hand hash by proving you possessed cards matching the previous hand hash, that you
+    // discarded the cards at the pre-specified indices, and that the Chainlink VRF seed was used
+    // to draw the new cards.
     // Only callable during the first 4 minutes of the game
     function proveSwapCards(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[5] calldata _pubSignals) public {
         
@@ -394,7 +407,8 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     }
     
 
-
+    // Once the game ends, to score your cards, you must prove that your hand 
+    // is linked to your on-chain hand hash.
     // Only callable after the first 4 minutes, before 10 minutes have elapsed
     function provePlayCards(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[7] calldata _pubSignals) public {
 
@@ -440,6 +454,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     }
 
 
+    // Distribute prizes to the winners and eject any AFK players from the game.
     // Only callable after 10 minutes have elapsed
     function concludeGame(uint256 gameId) public nonReentrant {
 
@@ -533,20 +548,10 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
 
 
 
+    // Cards have a face number of 1-10, and are colored blue or silver.
 
-
-    // In theory the scoring contract could be separate and even swappable
-
-    // Cards 1-10
-    // attractor is high card
-    // colors are silver and blue (?)
-
-    // NOTE
-    // for more advanced scoring, we could detect multiples, straights, flushes, full house, etc,
-    // by supplying an array of "claims" that are then checked against the provided cards, i.e.
-    // uint[] calldata claims
-
-    // Cards do not need to be validated here
+    // Cards have a base score determined by their proximity to the "attractor" number, 
+    // which is randomly selected each game.  Cards of the objective color are valued double.
     function scoreHand(uint256 objVRFSeed, uint256[5] memory cards) public pure returns(uint256) {
         (uint256 objAttractor, uint256 objColor) = getObjective(objVRFSeed);
 
@@ -636,7 +641,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
         playerStatus storage player = tokenPlayerStatus[playerAddress][gameToken];
         if (player.gameId != gameId) revert GameIDNotFound();
 
-        // Mark that the player has exited the game;
+        // Mark that the player has exited the game.
         session.exited[player.playerIndex] = _playerAddress;
 
         // Reset the player's state
