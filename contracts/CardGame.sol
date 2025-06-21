@@ -395,7 +395,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     
 
 
-    // Only callable after the first 4 minutes, before 15 minutes have elapsed
+    // Only callable after the first 4 minutes, before 10 minutes have elapsed
     function provePlayCards(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[7] calldata _pubSignals) public {
 
         // Check that the player is eligible to reveal their cards
@@ -440,7 +440,7 @@ contract CardGame is VRFV2PlusWrapperConsumerBase, ConfirmedOwner, ReentrancyGua
     }
 
 
-    // Only callable after 15 minutes have elapsed
+    // Only callable after 10 minutes have elapsed
     function concludeGame(uint256 gameId) public nonReentrant {
 
         game storage session = gameSessions[gameId];
