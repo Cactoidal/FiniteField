@@ -41,3 +41,9 @@ https://finite-field.vercel.app/
 The game contract is deployed on Base Sepolia, and has been configured for 4 players.  The dApp is designed for seamless account switching, allowing you to play against yourself if you wish to do so.  You will need only ETH to play; 0.01 ETH per account is more than sufficient.  
 
 The object of the game is to assemble a hand of cards with face values closest to the random "attractor" value.  The closer a card is to the attractor, the higher its base score.  Cards of the "objective color" are worth double.  Drawing the rare "inverse" card (only possible on a swap) will invert your score.
+
+Games last 4 minutes.  You can freely fold or raise (up to the game's maximumSpend) during those 4 minutes.  You can only initiate a swap during the first 2 minutes of the game, and you must prove the swap during the 4 minute time limit.  
+
+Any players who have not folded after 4 minutes will automatically raise to meet the highest bid.  
+
+Once the game is over, players have 6 minutes to submit a final proof of their hand for scoring.  After those 6 minutes, anyone can "conclude" the game, which will distribute the pot to the player(s) with the highest score.  Players who fail to prove have a score of 0.
