@@ -9,4 +9,4 @@ Usage verified here:
 Demo available here:
 https://finite-field.vercel.app/
 
-The game contract is deployed on Base Sepolia, and has been configured for 4 players.  The dApp is designed for seamless account switching, allowing you to play against yourself if you wish to do so.
+The game contract is deployed on Base Sepolia, and has been configured for 4 players.  The dApp is designed for seamless account switching, allowing you to play against yourself if you wish to do so.  You will need only ETH to play; 0.01 ETH per account is more than sufficient.
