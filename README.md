@@ -1,22 +1,37 @@
 # Finite Field
 
-A game where players draw hands of secret, random cards and try to win the pot by achieving the highest score.  Randomness is enforced by Chainlink VRF, which is used for drawing cards, and for determining the game objective at the moment the game begins.  Secrecy is achieved by mixing the Chainlink VRF seed with seeds from an allowed set, preventing players from knowing exactly which hand an opponent possesses.  Because players cannot know beforehand how the game will be scored, the advantage of deliberate hand selection is minimized.  Zero knowledge proofs enforce the correctness of a card draw, without revealing which seed the player selected.
+A game where players draw hands of secret, random cards and try to win the pot by achieving the highest score.  
+
+Randomness is sourced from Chainlink VRF, which is used for drawing cards, and for determining the game objective at the moment the game begins.  
+
+Secrecy is achieved by mixing the Chainlink VRF seed with seeds from an allowed set, preventing players from knowing exactly which hand an opponent possesses, only that there is a range of possible hands.  Because players cannot control the Chainlink VRF value, and cannot know beforehand how the game will be scored, the advantage of deliberate hand selection is minimized.  
+
+Zero knowledge proofs enforce the correctness of a card draw, without revealing which seed the player selected.
 
 Chainlink VRF seeds are requested in three places, with three different execution paths:
 
-HAND_DRAW
+[NEW_HAND](https://github.com/Cactoidal/FiniteField/blob/ced934101ebb9183e2fdf875c6074fee91945753/contracts/CardGame.sol#L88)
 
-SWAP_CARDS
+[SWAP_CARDS](https://github.com/Cactoidal/FiniteField/blob/ced934101ebb9183e2fdf875c6074fee91945753/contracts/CardGame.sol#L328)
 
-PLAY_CARDS
+[GAME_OBJECTIVE](https://github.com/Cactoidal/FiniteField/blob/ced934101ebb9183e2fdf875c6074fee91945753/contracts/CardGame.sol#L231)
 
-VRF fulfillment viewed here:
+VRF fulfillment [viewed here](https://github.com/Cactoidal/FiniteField/blob/ced934101ebb9183e2fdf875c6074fee91945753/contracts/CardGame.sol#L151).
 
 
 Chainlink VRF seeds are used in the handDraw and swapCards circuits:
 
+[handDraw](https://github.com/Cactoidal/FiniteField/blob/005744db086d22cf108b87446abc52736fb56fd1/circuits/handDraw.circom#L33)
+
+[swapCards](https://github.com/Cactoidal/FiniteField/blob/005744db086d22cf108b87446abc52736fb56fd1/circuits/swapCards.circom#L51)
+
 
 The ZKPs verifying the usage of Chainlink VRF are then validated on-chain:
+
+[proveHand](https://github.com/Cactoidal/FiniteField/blob/ced934101ebb9183e2fdf875c6074fee91945753/contracts/CardGame.sol#L219)
+
+[proveSwap](https://github.com/Cactoidal/FiniteField/blob/ced934101ebb9183e2fdf875c6074fee91945753/contracts/CardGame.sol#L394)
+
 
 ____
 
