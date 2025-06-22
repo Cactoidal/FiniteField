@@ -6,7 +6,6 @@ import {VRFV2PlusClient} from "@chainlink/contracts@1.4.0/src/v0.8/vrf/dev/libra
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
-import {IVRFWrapper} from "./interfaces/IVRFWrapper.sol";
 import {IWithdraw} from "./interfaces/IWithdraw.sol";
 import {IZKPVerifier} from "./interfaces/IZKPVerifier.sol";
 
