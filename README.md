@@ -4,9 +4,9 @@ A game where players draw hands of secret, random cards and try to win the pot b
 
 Randomness is sourced from Chainlink VRF, which is used for drawing cards, and for determining the game objective at the moment the game begins.  
 
-Secrecy is achieved by mixing the Chainlink VRF seed with seeds from an allowed set, preventing players from knowing exactly which hand an opponent possesses, only that there is a range of possible hands.  Because players cannot control the Chainlink VRF value, and cannot know beforehand how the game will be scored, the advantage of deliberate hand selection is minimized.  
+Secrecy is achieved by mixing the Chainlink VRF seed with a seed secretly picked from an allowed set, preventing players from knowing exactly which hand an opponent possesses, only that there is a range of possible hands.  Because players cannot control the Chainlink VRF value, and cannot know beforehand how the game will be scored, the advantage of deliberate hand selection is minimized.  
 
-Zero knowledge proofs enforce the correctness of a card draw, without revealing which seed the player selected.
+Zero knowledge proofs enforce the correctness of a card draw, without revealing which seed the player secretly selected.
 
 Chainlink VRF seeds are requested in three places, with three different execution paths:
 
