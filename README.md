@@ -40,4 +40,4 @@ https://finite-field.vercel.app/
 
 The game contract is deployed on Base Sepolia, and has been configured for 4 players.  The dApp is designed for seamless account switching, allowing you to play against yourself if you wish to do so.  You will need only ETH to play; 0.01 ETH per account is more than sufficient.  
 
-The object of the game is to assemble a hand of cards with face values closest to the random "attractor" value.  The closer a card is to the attractor, the higher its base score.  Cards of the "objective color" are worth double.
+The object of the game is to assemble a hand of cards with face values closest to the random "attractor" value.  The closer a card is to the attractor, the higher its base score.  Cards of the "objective color" are worth double.  Drawing the rare "inverse" card (only possible on a swap) will invert your score.
