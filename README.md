@@ -47,3 +47,11 @@ Games last 4 minutes.  You can freely fold or raise (up to the game's maximumSpe
 Any players who have not folded after 4 minutes will automatically raise to meet the highest bid.  
 
 Once the game is over, players have 6 minutes to submit a final proof of their hand for scoring.  After those 6 minutes, anyone can "conclude" the game, which will distribute the pot to the player(s) with the highest score.  Players who fail to prove have a score of 0.
+
+NOTE:
+When starting a game, you will need to provide an array of valid opponent addresses (as strings, with quotation marks), i.e.:
+
+["0xabc...", "0x123...", "0xa1b..."]
+
+When using Firefox, pasting something into a text box will spawn a small "Paste" modal; click this to update the browser clipboard.
+On Chromium/Brave, you can simply paste twice to overwrite whatever was previously in your browser clipboard.
