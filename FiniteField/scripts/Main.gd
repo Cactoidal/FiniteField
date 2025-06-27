@@ -20,6 +20,7 @@ var player_status = {}
 # Game states are mapped to wallet addresses while they are ongoing
 var game_session = {}
 
+@onready var connector = preload("res://addons/cactus.godotethersweb/examples/Connector.tscn")
 @onready var card_scene = preload("res://scenes/Card.tscn")
 @onready var opponent_scene = preload("res://scenes/Opponent.tscn")
 
@@ -74,6 +75,10 @@ func _ready():
 	load_and_attach(js_crypto_filepath)
 	load_and_attach(zk_bridge_filepath)
 	
+	#window.walletBridge.getWalletFromProviders("isMetaMask")
+	#window.walletBridge.getWalletFromProviders("isPhantom")
+	#window.walletBridge.detectWallets()
+	
 	# DEBUG
 	#print(window.walletBridge.getFunctionSelector("InvalidHash()"))
 	#0x0af806e04e0432c15d6f685dd23af9d86bc609b3ef4f895cbf5ce87240722094
@@ -103,9 +108,10 @@ func connect_buttons():
 	
 	
 func connect_wallet():
-	if EthersWeb.has_wallet:
-		var callback = EthersWeb.create_callback(self, "got_account_list")
-		EthersWeb.connect_wallet(callback)
+	var callback = EthersWeb.create_callback(self, "got_account_list")
+	var new_connector = connector.instantiate()
+	new_connector.ui_callback = callback
+	add_child(new_connector)
 
 
 func got_account_list(callback):
