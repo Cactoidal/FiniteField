@@ -36,16 +36,27 @@ The ZKPs verifying the usage of Chainlink VRF are then validated on-chain:
 The Godot interface requests Chainlink VRF, and retrieves the VRF seed from the chain and uses it to update the UI.  For the key functions involving VRF:
 
 [Buying a seed](https://github.com/Cactoidal/FiniteField/blob/a66d41381fc6dea2d6d16c68a22d05ccecd37cf9/FiniteField/scripts/Main.gd#L1021C6-L1021C14)
+
 [Proving the hand](https://github.com/Cactoidal/FiniteField/blob/a66d41381fc6dea2d6d16c68a22d05ccecd37cf9/FiniteField/scripts/Main.gd#L1041)
+
 [Starting a game](https://github.com/Cactoidal/FiniteField/blob/a66d41381fc6dea2d6d16c68a22d05ccecd37cf9/FiniteField/scripts/Main.gd#L1090)
+
 [Requesting a swap seed](https://github.com/Cactoidal/FiniteField/blob/a66d41381fc6dea2d6d16c68a22d05ccecd37cf9/FiniteField/scripts/Main.gd#L1139)
+
 [Proving the swap](https://github.com/Cactoidal/FiniteField/blob/a66d41381fc6dea2d6d16c68a22d05ccecd37cf9/FiniteField/scripts/Main.gd#L1166)
+
 [Predicting a hand using the VRF seed](https://github.com/Cactoidal/FiniteField/blob/a66d41381fc6dea2d6d16c68a22d05ccecd37cf9/FiniteField/scripts/Main.gd#L1393)
+
 [Choosing the hand based on player preference](https://github.com/Cactoidal/FiniteField/blob/a66d41381fc6dea2d6d16c68a22d05ccecd37cf9/FiniteField/scripts/Main.gd#L352)
+
 [Calculating possible opponent hands using their VRF seed](https://github.com/Cactoidal/FiniteField/blob/a66d41381fc6dea2d6d16c68a22d05ccecd37cf9/FiniteField/scripts/Main.gd#L1356)
+
 [Checking the game objective](https://github.com/Cactoidal/FiniteField/blob/a66d41381fc6dea2d6d16c68a22d05ccecd37cf9/FiniteField/scripts/Main.gd#L1472)
+
 [Polling the player's hand seed](https://github.com/Cactoidal/FiniteField/blob/a66d41381fc6dea2d6d16c68a22d05ccecd37cf9/FiniteField/scripts/Main.gd#L246)
+
 [Polling the game's objective seed](https://github.com/Cactoidal/FiniteField/blob/a66d41381fc6dea2d6d16c68a22d05ccecd37cf9/FiniteField/scripts/Main.gd#L528)
+
 [Polling the swap seeds](https://github.com/Cactoidal/FiniteField/blob/a66d41381fc6dea2d6d16c68a22d05ccecd37cf9/FiniteField/scripts/Main.gd#L600)
 
 ____
