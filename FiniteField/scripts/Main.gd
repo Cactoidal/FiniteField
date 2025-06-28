@@ -74,14 +74,7 @@ func _ready():
 	
 	load_and_attach(js_crypto_filepath)
 	load_and_attach(zk_bridge_filepath)
-	
-	#window.walletBridge.getWalletFromProviders("isMetaMask")
-	#window.walletBridge.getWalletFromProviders("isPhantom")
-	#window.walletBridge.detectWallets()
-	
-	# DEBUG
-	#print(window.walletBridge.getFunctionSelector("InvalidHash()"))
-	#0x0af806e04e0432c15d6f685dd23af9d86bc609b3ef4f895cbf5ce87240722094
+
 
 func connect_buttons():
 	$ConnectWallet.connect("pressed", connect_wallet)
@@ -431,8 +424,7 @@ func restore_hand():
 	get_player_status(connected_wallet)
 
 
-# DEBUG
-# STARMARK
+
 func delete_hand():
 	if $Overlay/Restore/DeleteHand.text == "Conclude Game":
 		conclude_game()
@@ -440,9 +432,6 @@ func delete_hand():
 		start_game($Overlay/Restore/Addresses)
 
 
-# DEBUG
-# Multi opponent support doesn't exist yet 
-# (because TABLE_SIZE is currently a constant)
 func select_game_mode():
 	$Overlay/StartGame.visible = true
 	$Overlay.visible = true
@@ -597,9 +586,7 @@ func got_game_player_info(callback):
 	
 	# DEBUG
 	# Should be a catch-all for any condition that
-	# removes the player from the game, just double
-	# check that redundancy with other functions
-	# won't cause problems
+	# removes the player from the game
 	if connected_wallet in exited:
 		print_log("Game has concluded, exiting...")
 		reset_states()
@@ -637,7 +624,7 @@ func got_game_player_info(callback):
 		if playerHasSwapped:
 			if $GameInfo/SwapWindow/SwapActuator.text != "Copy Hand":
 				set_up_copy_swap()
-		# DEBUG
+		
 		elif !$GameInfo/SwapWindow/SwapActuator.text in ["Finish Swap", "Copy Hand"]:
 			print_log("VRF Swap Seed received.  Now prove the swap.")
 			$GameInfo/SwapWindow/SwapActuator.text = "Finish Swap"
@@ -646,7 +633,7 @@ func got_game_player_info(callback):
 
 func set_up_copy_swap():
 	$GameInfo/SwapWindow/SwapActuator.text = "Copy Hand"
-	# DEBUG
+	
 	var hand_copy = player_status[connected_wallet]["hand"].duplicate()
 	$GameInfo/SwapWindow/HandText.text = Marshalls.utf8_to_base64( str(hand_copy) )
 	$GameInfo/CopyPrompt.visible = true
@@ -762,7 +749,7 @@ func receive_tx_receipt(tx_receipt):
 		
 		if tx_type == "RAISE":
 			var amount = tx_receipt["amount"]
-			# DEBUG
+			
 			var total_bid_amount = int(player_status[connected_wallet]["total_bid_amount"]) + int(amount)
 			player_status[connected_wallet]["total_bid_amount"] = str(total_bid_amount)
 			$GameInfo/Bid.text = str(player_status[connected_wallet]["total_bid_amount"]) + " / 1000"
@@ -792,7 +779,7 @@ func receive_tx_receipt(tx_receipt):
 				
 				set_up_copy_swap()
 				
-				# DEBUG
+				
 				var card_copy = player_status[connected_wallet]["hand"]["cards"].duplicate()
 				var index = 0
 				for card in $Cards.get_children():
@@ -915,7 +902,7 @@ func get_proof_calldata(callback):
 	
 
 
-# DEBUG
+
 func await_transaction(callback):
 	var tx_type = ""
 	if "tx_type" in callback.keys():
@@ -926,7 +913,7 @@ func await_transaction(callback):
 	# SUCCESSFUL TX
 	if "result" in callback.keys():
 		print_log("Transaction Sent\nWaiting...")
-		# DEBUG
+		
 		match tx_type:
 			"GET_HAND_VRF":
 				pass
@@ -1048,8 +1035,6 @@ func buy_seed():
 	# DEBUG
 	# the necessary GAS LIMIT varies by network and number of players
 	EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "620000", _callback)
-	#EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "360000", _callback)
-	#EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "260000", _callback)
 
 
 
@@ -1123,8 +1108,7 @@ func start_game(source):
 	# DEBUG
 	# the necessary GAS LIMIT varies by network and number of players
 	EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "620000", _callback)
-	#EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "480000", _callback)
-	#EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "380000", _callback)
+	
 	
 
 
@@ -1176,8 +1160,7 @@ func swap_cards():
 	# DEBUG
 	# the necessary GAS LIMIT varies by network and number of players
 	EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "620000", _callback)
-	#EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "360000", _callback)
-	#EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "260000", _callback)
+	
 
 
 func prove_swap():
@@ -1555,7 +1538,7 @@ func got_timestamp(callback):
 	var time_elapsed = int(callback["result"]) - int(callback["start_timestamp"])
 	game_session[connected_wallet]["timeElapsed"] = time_elapsed
 	
-	# DEBUG
+	
 	var time_remaining = 240 - time_elapsed
 	
 	$GameInfo/Time.visible = true
