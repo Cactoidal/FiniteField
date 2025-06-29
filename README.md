@@ -10,54 +10,54 @@ Zero knowledge proofs enforce the correctness of a card draw, without revealing 
 
 Chainlink VRF seeds are requested in three places, with three different execution paths:
 
-[NEW_HAND](https://github.com/Cactoidal/FiniteField/blob/ced934101ebb9183e2fdf875c6074fee91945753/contracts/CardGame.sol#L88)
+[NEW_HAND](https://github.com/Cactoidal/FiniteField/blob/9c69d61937812d00a7fc63231be14530d3ba183c/contracts/CardGame.sol#L88)
 
-[SWAP_CARDS](https://github.com/Cactoidal/FiniteField/blob/ced934101ebb9183e2fdf875c6074fee91945753/contracts/CardGame.sol#L328)
+[SWAP_CARDS](https://github.com/Cactoidal/FiniteField/blob/9c69d61937812d00a7fc63231be14530d3ba183c/contracts/CardGame.sol#L328)
 
-[GAME_OBJECTIVE](https://github.com/Cactoidal/FiniteField/blob/ced934101ebb9183e2fdf875c6074fee91945753/contracts/CardGame.sol#L231)
+[GAME_OBJECTIVE](https://github.com/Cactoidal/FiniteField/blob/9c69d61937812d00a7fc63231be14530d3ba183c/contracts/CardGame.sol#L231)
 
-VRF fulfillment [viewed here](https://github.com/Cactoidal/FiniteField/blob/ced934101ebb9183e2fdf875c6074fee91945753/contracts/CardGame.sol#L151).
+VRF fulfillment [viewed here](https://github.com/Cactoidal/FiniteField/blob/9c69d61937812d00a7fc63231be14530d3ba183c/contracts/CardGame.sol#L151).
 
 
 Chainlink VRF seeds are used in the handDraw and swapCards circuits:
 
-[handDraw](https://github.com/Cactoidal/FiniteField/blob/005744db086d22cf108b87446abc52736fb56fd1/circuits/handDraw.circom#L33)
+[handDraw](https://github.com/Cactoidal/FiniteField/blob/9c69d61937812d00a7fc63231be14530d3ba183c/circuits/handDraw.circom#L33)
 
-[swapCards](https://github.com/Cactoidal/FiniteField/blob/005744db086d22cf108b87446abc52736fb56fd1/circuits/swapCards.circom#L51)
+[swapCards](https://github.com/Cactoidal/FiniteField/blob/9c69d61937812d00a7fc63231be14530d3ba183c/circuits/swapCards.circom#L51)
 
 
 The ZKPs verifying the usage of Chainlink VRF are then validated on-chain:
 
-[proveHand](https://github.com/Cactoidal/FiniteField/blob/ced934101ebb9183e2fdf875c6074fee91945753/contracts/CardGame.sol#L219)
+[proveHand](https://github.com/Cactoidal/FiniteField/blob/9c69d61937812d00a7fc63231be14530d3ba183c/contracts/CardGame.sol#L219)
 
-[proveSwap](https://github.com/Cactoidal/FiniteField/blob/ced934101ebb9183e2fdf875c6074fee91945753/contracts/CardGame.sol#L394)
+[proveSwap](https://github.com/Cactoidal/FiniteField/blob/9c69d61937812d00a7fc63231be14530d3ba183c/contracts/CardGame.sol#L394)
 
 
 The Godot interface requests Chainlink VRF, and retrieves the VRF seed from the chain and uses it to update the UI.  For the key functions involving VRF:
 
-[Buying a seed](https://github.com/Cactoidal/FiniteField/blob/a66d41381fc6dea2d6d16c68a22d05ccecd37cf9/FiniteField/scripts/Main.gd#L1021C6-L1021C14)
+[Buying a seed](https://github.com/Cactoidal/FiniteField/blob/9c69d61937812d00a7fc63231be14530d3ba183c/FiniteField/scripts/Main.gd#L1021C6-L1021C14)
 
-[Proving the hand](https://github.com/Cactoidal/FiniteField/blob/a66d41381fc6dea2d6d16c68a22d05ccecd37cf9/FiniteField/scripts/Main.gd#L1041)
+[Proving the hand](https://github.com/Cactoidal/FiniteField/blob/9c69d61937812d00a7fc63231be14530d3ba183c/FiniteField/scripts/Main.gd#L1041)
 
-[Starting a game](https://github.com/Cactoidal/FiniteField/blob/a66d41381fc6dea2d6d16c68a22d05ccecd37cf9/FiniteField/scripts/Main.gd#L1090)
+[Starting a game](https://github.com/Cactoidal/FiniteField/blob/9c69d61937812d00a7fc63231be14530d3ba183c/FiniteField/scripts/Main.gd#L1090)
 
-[Requesting a swap seed](https://github.com/Cactoidal/FiniteField/blob/a66d41381fc6dea2d6d16c68a22d05ccecd37cf9/FiniteField/scripts/Main.gd#L1139)
+[Requesting a swap seed](https://github.com/Cactoidal/FiniteField/blob/9c69d61937812d00a7fc63231be14530d3ba183c/FiniteField/scripts/Main.gd#L1139)
 
-[Proving the swap](https://github.com/Cactoidal/FiniteField/blob/a66d41381fc6dea2d6d16c68a22d05ccecd37cf9/FiniteField/scripts/Main.gd#L1166)
+[Proving the swap](https://github.com/Cactoidal/FiniteField/blob/9c69d61937812d00a7fc63231be14530d3ba183c/FiniteField/scripts/Main.gd#L1166)
 
-[Predicting a hand using the VRF seed](https://github.com/Cactoidal/FiniteField/blob/a66d41381fc6dea2d6d16c68a22d05ccecd37cf9/FiniteField/scripts/Main.gd#L1393)
+[Predicting a hand using the VRF seed](https://github.com/Cactoidal/FiniteField/blob/9c69d61937812d00a7fc63231be14530d3ba183c/FiniteField/scripts/Main.gd#L1393)
 
-[Choosing the hand based on player preference](https://github.com/Cactoidal/FiniteField/blob/a66d41381fc6dea2d6d16c68a22d05ccecd37cf9/FiniteField/scripts/Main.gd#L352)
+[Choosing the hand based on player preference](https://github.com/Cactoidal/FiniteField/blob/9c69d61937812d00a7fc63231be14530d3ba183c/FiniteField/scripts/Main.gd#L352)
 
-[Calculating possible opponent hands using their VRF seed](https://github.com/Cactoidal/FiniteField/blob/a66d41381fc6dea2d6d16c68a22d05ccecd37cf9/FiniteField/scripts/Main.gd#L1356)
+[Calculating possible opponent hands using their VRF seed](https://github.com/Cactoidal/FiniteField/blob/9c69d61937812d00a7fc63231be14530d3ba183c/FiniteField/scripts/Main.gd#L1356)
 
-[Checking the game objective](https://github.com/Cactoidal/FiniteField/blob/a66d41381fc6dea2d6d16c68a22d05ccecd37cf9/FiniteField/scripts/Main.gd#L1472)
+[Checking the game objective](https://github.com/Cactoidal/FiniteField/blob/9c69d61937812d00a7fc63231be14530d3ba183c/FiniteField/scripts/Main.gd#L1472)
 
-[Polling the player's hand seed](https://github.com/Cactoidal/FiniteField/blob/a66d41381fc6dea2d6d16c68a22d05ccecd37cf9/FiniteField/scripts/Main.gd#L246)
+[Polling the player's hand seed](https://github.com/Cactoidal/FiniteField/blob/9c69d61937812d00a7fc63231be14530d3ba183c/FiniteField/scripts/Main.gd#L246)
 
-[Polling the game's objective seed](https://github.com/Cactoidal/FiniteField/blob/a66d41381fc6dea2d6d16c68a22d05ccecd37cf9/FiniteField/scripts/Main.gd#L528)
+[Polling the game's objective seed](https://github.com/Cactoidal/FiniteField/blob/9c69d61937812d00a7fc63231be14530d3ba183c/FiniteField/scripts/Main.gd#L528)
 
-[Polling the swap seeds](https://github.com/Cactoidal/FiniteField/blob/a66d41381fc6dea2d6d16c68a22d05ccecd37cf9/FiniteField/scripts/Main.gd#L600)
+[Polling the swap seeds](https://github.com/Cactoidal/FiniteField/blob/9c69d61937812d00a7fc63231be14530d3ba183c/FiniteField/scripts/Main.gd#L600)
 
 ____
 
