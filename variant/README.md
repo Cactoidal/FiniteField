@@ -2,7 +2,7 @@ To entirely prevent the player from manipulating their own cards and predicting 
 
 The local seed hash is a random secret number combined with some random noise.  In the zero knowledge proof, we can enforce the usage of that random secret number as the local seed by recreating the hash in the circuit.
 
-Because the secret local seed is committed before the player receives the Chainlink VRF value, the player is bound to a single outcome, and cannot alter that outcome.
+Because the secret local seed is committed before the player receives the Chainlink VRF value, the player is bound to a single outcome, and cannot alter that outcome.  The number of possible seeds is also vastly increased, making it impossible to predict which cards an opponent might draw.
 
 The circuits and contract in this directory demonstrate how this would be implemented, with few changes to the original logic.
 _____
