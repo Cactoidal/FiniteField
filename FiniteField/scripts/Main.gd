@@ -1033,7 +1033,7 @@ func buy_seed():
 	# Gas limit must be specified because ethers.js will underestimate
 	
 	# DEBUG
-	# the necessary GAS LIMIT varies by network and number of players
+	# the necessary GAS LIMIT varies by network
 	EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "620000", _callback)
 
 
@@ -1158,7 +1158,7 @@ func swap_cards():
 	var _callback = EthersWeb.create_callback(self, "await_transaction", {"tx_type": "INITIATE_SWAP"})
 	
 	# DEBUG
-	# the necessary GAS LIMIT varies by network and number of players
+	# the necessary GAS LIMIT varies by network
 	EthersWeb.send_transaction(test_network, SEPOLIA_GAME_LOGIC_ADDRESS, data, "0.002", "620000", _callback)
 	
 
