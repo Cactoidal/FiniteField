@@ -59,6 +59,11 @@ The Godot interface requests Chainlink VRF, and retrieves the VRF seed from the 
 
 [Polling the swap seeds](https://github.com/Cactoidal/FiniteField/blob/9c69d61937812d00a7fc63231be14530d3ba183c/FiniteField/scripts/Main.gd#L600)
 
+
+----
+The fixed set of local seeds is a means of controlling player-contributed entropy, to allow hands to remain secret while preventing the player from exerting too much influence over which cards they draw.  There is however an alternative method that would eliminate any player control over the draw, while also removing the ability to predict opponents' cards.
+
+For an explanation of how this would work and implementation examples, please see the [variant directory](https://github.com/Cactoidal/FiniteField/tree/main/variant).
 ____
 
 Demo available here:
